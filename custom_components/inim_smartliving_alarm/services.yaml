@@ -1,0 +1,7 @@
+alarm_reset:
+  name: Alarm Reset
+  description: "Resets the alarm memory for all currently triggered areas on the Inim panel."
+  target:
+    entity:
+      - integration: inim_smartliving_alarm
+        domain: alarm_control_panel

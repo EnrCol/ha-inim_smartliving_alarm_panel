@@ -1,0 +1,8 @@
+sequence:
+  - action: inim_smartliving_alarm.alarm_reset
+    metadata: {}
+    data: {}
+    target:
+      entity_id: alarm_control_panel.sl1050
+alias: Alarm Reset
+description: ""
