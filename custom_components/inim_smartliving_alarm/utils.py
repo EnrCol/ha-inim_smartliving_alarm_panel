@@ -40,7 +40,7 @@ async def async_handle_scenario_activation_failure(
     action_name: str,
     is_disarm_scenario: bool,
 ) -> None:
-    """Handles the failure of a scenario activation, providing detailed notifications."""
+    """Handles the failure of a scenario activation, providing detailed notifications and emitting an event."""
 
     _LOGGER.error(
         "%s: Failed to %s (scenario index %s) - API reported failure",
@@ -69,6 +69,11 @@ async def async_handle_scenario_activation_failure(
     )
     notification_id_suffix = f"action_failed_generic_{scenario_idx_to_activate}"
 
+    # Set up default variables for the HA Event bus payload
+    event_reason = "unknown"
+    final_scenario_name = base_scenario_name_for_msg
+    blocking_zones_event_data = []
+
     if (
         not is_disarm_scenario
         and coordinator
@@ -88,6 +93,8 @@ async def async_handle_scenario_activation_failure(
                 all_scenario_names_list[scenario_idx_to_activate]
                 or target_scenario_name
             )
+
+        final_scenario_name = target_scenario_name
 
         target_scenario_activation_detail = next(
             (
@@ -126,6 +133,7 @@ async def async_handle_scenario_activation_failure(
             notification_id_suffix = (
                 f"activation_failed_no_areas_{scenario_idx_to_activate}"
             )
+            event_reason = "no_areas_identified"
         else:
             all_zone_names_list = initial_panel_config.get(KEY_INIT_ZONES, {}).get(
                 KEY_INIT_ZONE_NAMES, []
@@ -183,8 +191,18 @@ async def async_handle_scenario_activation_failure(
                             problematic_zones_messages.append(
                                 f"'{zone_name}' in {areas_str}"
                             )
+                            # Add structured data for the event bus payload
+                            blocking_zones_event_data.append(
+                                {
+                                    "zone_id": zone_id_1_based,
+                                    "zone_name": zone_name,
+                                    "status": zone_live_status,
+                                    "areas": area_names_parts,
+                                }
+                            )
 
             if problematic_zones_messages:
+                event_reason = "zones_blocked"
                 notification_title = (
                     f"Inim Alarm - Scenario '{target_scenario_name}' Blocked"
                 )
@@ -204,6 +222,7 @@ async def async_handle_scenario_activation_failure(
                 )
                 _LOGGER.info("%s: %s", entity_name, notification_message)
             else:
+                event_reason = "unknown_zones_error"
                 notification_title = f"Inim Alarm - '{target_scenario_name}' Failed"
                 notification_message = (
                     f"Failed to activate {target_scenario_name} for '{entity_name}'. "
@@ -219,6 +238,7 @@ async def async_handle_scenario_activation_failure(
                 )
 
     elif not is_disarm_scenario:
+        event_reason = "no_data_available"
         notification_title = f"Inim Alarm - '{base_scenario_name_for_msg}' Failed"
         notification_message = f"Failed to {action_name} for '{entity_name}'. Reason undetermined (data unavailable)."
         notification_id_suffix = f"activation_failed_no_data_{scenario_idx_to_activate}"
@@ -228,10 +248,11 @@ async def async_handle_scenario_activation_failure(
             action_name,
         )
     else:  # Disarm scenario failed or other generic failure
+        event_reason = "disarm_failed"
         # Title already includes base_scenario_name_for_msg from default initialization
         notification_message = f"Failed to {action_name} ({base_scenario_name_for_msg}) for '{entity_name}'. Check panel."
-        # notification_id_suffix remains as initialized: "action_failed_generic_{scenario_idx_to_activate}"
 
+    # 1. Trigger the Persistent Notification in the UI
     await hass.services.async_call(
         "persistent_notification",
         "create",
@@ -242,6 +263,19 @@ async def async_handle_scenario_activation_failure(
         },
         blocking=False,
     )
+
+    # 2. Fire the custom HA event for automations
+    event_data = {
+        "entity_unique_id": entity_unique_id,
+        "entity_name": entity_name,
+        "action": action_name,
+        "scenario_index": scenario_idx_to_activate,
+        "scenario_name": final_scenario_name,
+        "reason": event_reason,
+        "blocking_zones": blocking_zones_event_data,
+        "message": notification_message,
+    }
+    hass.bus.async_fire(f"{DOMAIN}_scenario_activation_failed", event_data)
 
     if coordinator:
         await coordinator.async_request_refresh()
