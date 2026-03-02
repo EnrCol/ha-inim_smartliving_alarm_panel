@@ -334,14 +334,13 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry  # Base class provides this
-        self.initial_panel_config = self.config_entry.data.get(
+        self.initial_panel_config = config_entry.data.get(
             DATA_INITIAL_PANEL_CONFIG, {}
         )
         # Combine initial data (from entry.data) with current options (from entry.options)
         # for populating form defaults correctly.
-        self.current_pin = self.config_entry.data.get(CONF_PIN, "")  # Get current PIN
-        self.current_settings = {**self.config_entry.data, **self.config_entry.options}
+        self.current_pin = config_entry.data.get(CONF_PIN, "")  # Get current PIN
+        self.current_settings = {**config_entry.data, **config_entry.options}
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
