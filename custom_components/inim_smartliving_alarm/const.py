@@ -1,9 +1,17 @@
 """Constants for the Inim Alarm integration."""
 
+from homeassistant.const import Platform
+
 DOMAIN = "inim_smartliving_alarm"
 
 # Platforms to be set up for this integration
-PLATFORMS = ["alarm_control_panel", "binary_sensor", "button", "sensor", "switch"]
+PLATFORMS = [
+    Platform.ALARM_CONTROL_PANEL,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 
 # Configuration keys used in config_flow.py and __init__.py
 CONF_HOST = "host"
