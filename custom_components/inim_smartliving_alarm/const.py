@@ -103,7 +103,7 @@ KEY_INIT_ZONE_CONFIG_ASSIGNED_AREAS = (
 )
 
 KEY_INIT_AREAS = "areas"  # Dict containing list of area names
-KEY_INIT_AREA_NAMES = "names"  # List of area names
+KEY_INIT_AREA_NAMES = "names"  # List of area names (str)
 
 # From coordinator.data (live status snapshot)
 KEY_LIVE_ACTIVE_SCENARIO = "active_scenario"  # Dict with current active scenario info
