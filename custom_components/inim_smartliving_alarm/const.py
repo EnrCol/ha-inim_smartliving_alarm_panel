@@ -36,7 +36,7 @@ CONF_SCENARIO_ARM_VACATION = "scenario_arm_vacation"
 CONF_SCENARIO_DISARM = "scenario_disarm"
 
 # Defaults
-DEFAULT_POLLING_INTERVAL = 30  # seconds
+DEFAULT_POLLING_INTERVAL = 2  # seconds
 DEFAULT_PORT = 5004  # Common default for SmartLAN/SI, user can override
 DEFAULT_PANEL_NAME = "Inim Smartliving"  # Default if user doesn't provide one
 
