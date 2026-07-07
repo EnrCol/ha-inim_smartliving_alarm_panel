@@ -272,7 +272,7 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(
                 CONF_POLLING_INTERVAL,
                 default=step1_data.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL),
-            ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
+            ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
             vol.Optional(
                 CONF_LIMIT_AREAS,
                 default=step1_data.get(CONF_LIMIT_AREAS, DEFAULT_LIMIT_AREAS),
@@ -464,7 +464,7 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_POLLING_INTERVAL,
                 default=self.current_settings.get(CONF_POLLING_INTERVAL),
-            ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
+            ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
             vol.Optional(
                 CONF_LIMIT_AREAS, default=self.current_settings.get(CONF_LIMIT_AREAS)
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=16)),
