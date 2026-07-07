@@ -23,24 +23,16 @@ from .coordinator import InimDataUpdateCoordinator
 
 # Import API
 from .inim_api import InimAlarmAPI
+from .smartliving_10100 import apply_smartliving_10100_precheck_fix
 
 _LOGGER = logging.getLogger(__name__)
 
 
-# TEST 01 - SmartLiving 10100 compatibility:
-# The panel can activate scenarios correctly, but the scenario pre-check command
-# can disturb the following activation command on this model. Keep this branch
-# small and testable; later this should become a config option.
-def _skip_scenario_activation_allowed(self, scenario_number_0_indexed):
-    """Bypass scenario activation pre-check for SmartLiving 10100 test builds."""
-    _LOGGER.info(
-        "Skipping scenario activation pre-check for scenario %s (SmartLiving 10100 test compatibility).",
-        scenario_number_0_indexed,
-    )
-    return True
-
-
-InimAlarmAPI.check_scenario_activation_allowed = _skip_scenario_activation_allowed
+# SmartLiving 10100 compatibility:
+# Keep the scenario activation pre-check enabled, but read its full 27-byte
+# response so no leftover bytes remain in the TCP socket before the activation
+# command. See smartliving_10100.py for the protocol notes and test history.
+apply_smartliving_10100_precheck_fix()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
