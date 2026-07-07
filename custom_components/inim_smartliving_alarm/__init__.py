@@ -27,6 +27,22 @@ from .inim_api import InimAlarmAPI
 _LOGGER = logging.getLogger(__name__)
 
 
+# TEST 01 - SmartLiving 10100 compatibility:
+# The panel can activate scenarios correctly, but the scenario pre-check command
+# can disturb the following activation command on this model. Keep this branch
+# small and testable; later this should become a config option.
+def _skip_scenario_activation_allowed(self, scenario_number_0_indexed):
+    """Bypass scenario activation pre-check for SmartLiving 10100 test builds."""
+    _LOGGER.info(
+        "Skipping scenario activation pre-check for scenario %s (SmartLiving 10100 test compatibility).",
+        scenario_number_0_indexed,
+    )
+    return True
+
+
+InimAlarmAPI.check_scenario_activation_allowed = _skip_scenario_activation_allowed
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Inim Alarm from a config entry."""
     _LOGGER.info(
