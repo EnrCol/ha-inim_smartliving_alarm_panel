@@ -117,11 +117,12 @@ async def async_setup_entry(
             for area_id in triggered_areas:
                 await entity.async_alarm_reset(area_id=area_id)
 
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_ALARM_RESET,
-        async_alarm_reset_service,
-    )
+    if not hass.services.has_service(DOMAIN, SERVICE_ALARM_RESET):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_ALARM_RESET,
+            async_alarm_reset_service,
+        )
 
 
 class InimAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
