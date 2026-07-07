@@ -121,9 +121,10 @@ async def async_setup_entry(
         # Apply the limit before iterating
         zones_to_process = zones_config_detailed[:num_zones_to_create]
         _LOGGER.debug(
-            "Setting up %s Zone Enabled Switches (Limit: %s, Available: {len(zones_config_detailed)})",
+            "Setting up %s Zone Enabled Switches (Limit: %s, Available: %s)",
             len(zones_to_process),
-            {limit_zones},
+            limit_zones,
+            len(zones_config_detailed),
         )
 
         for zone_detail in zones_to_process:
@@ -378,7 +379,7 @@ class InimZoneEnabledSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off (exclude/bypass the zone)."""
         _LOGGER.info(
-            "Excluding Zone %s (Internal Index: %s})",
+            "Excluding Zone %s (Internal Index: %s)",
             self._zone_id_1_based,
             self._zone_internal_index,
         )
