@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release. Must match manifest.json, for example 0.3.3-test2"
+        required: true
+        default: "0.3.3-test2"
+      prerelease:
+        description: "Mark this GitHub release as a pre-release"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify manifest version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = os.environ["VERSION"]
+          manifest_path = Path("custom_components/inim_smartliving_alarm/manifest.json")
+          manifest = json.loads(manifest_path.read_text())
+          actual = manifest.get("version")
+
+          if actual != expected:
+              raise SystemExit(
+                  f"manifest.json version mismatch: expected {expected}, found {actual}"
+              )
+
+          print(f"manifest.json version OK: {actual}")
+          PY
+
+      - name: Build integration zip
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          ZIP_NAME="inim_smartliving_alarm-${TAG}.zip"
+
+          cd custom_components
+          zip -r "../${ZIP_NAME}" inim_smartliving_alarm
+          cd ..
+
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          RELEASE_ARGS=()
+          if [ "${PRERELEASE}" = "true" ]; then
+            RELEASE_ARGS+=(--prerelease)
+          fi
+
+          gh release create "${TAG}" "${ZIP_NAME}" \
+            --title "${TAG}" \
+            --notes "Home Assistant custom integration release ${TAG}." \
+            "${RELEASE_ARGS[@]}"
