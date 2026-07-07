@@ -1,1 +1,0 @@
-UI polling test note: allow two second polling in the options form.
