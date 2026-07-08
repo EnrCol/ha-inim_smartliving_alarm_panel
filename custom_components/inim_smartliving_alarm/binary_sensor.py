@@ -17,12 +17,14 @@ from .const import (
     CONF_LIMIT_AREAS,
     CONF_LIMIT_SCENARIOS,
     CONF_LIMIT_ZONES,
+    CONF_PANEL_MODEL,
     CONF_PANEL_NAME,
     DATA_COORDINATOR,
     DATA_INITIAL_PANEL_CONFIG,
     DEFAULT_LIMIT_AREAS,
     DEFAULT_LIMIT_SCENARIOS,
     DEFAULT_LIMIT_ZONES,
+    DEFAULT_PANEL_MODEL,
     DEFAULT_PANEL_NAME,
     DOMAIN,
     KEY_INIT_AREA_NAMES,
@@ -36,6 +38,7 @@ from .const import (
     KEY_LIVE_ZONE_TRIGGERED_STATUSES_MAP,
     KEY_LIVE_ZONES_TRIGGERED_STATUS,
 )
+from .panel_profiles import PANEL_MODEL_10100
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,8 +60,12 @@ async def async_setup_entry(
     # Get Panel model/version
     system_info = initial_panel_config.get("system_info", {})
 
-    # Get user-defined panel name
+    # Get user-defined panel name and panel profile
     panel_display_name = entry.data.get(CONF_PANEL_NAME, DEFAULT_PANEL_NAME)
+    panel_model = entry.options.get(
+        CONF_PANEL_MODEL,
+        entry.data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
+    )
 
     # Get user-defined limits (from options first, then data, then default)
     limit_zones = entry.options.get(
@@ -92,16 +99,27 @@ async def async_setup_entry(
 
     binary_sensors_to_add = []
 
-    num_zones_to_create = min(len(all_zone_names), limit_zones)
+    num_zones_to_consider = min(len(all_zone_names), limit_zones)
+    if panel_model == PANEL_MODEL_10100:
+        # 10100/10100L profiles can contain large gaps between real zones because
+        # terminal numbering includes empty expansion slots, outputs and radio
+        # devices. Expose only slots with a programmed name.
+        zone_indexes_to_create = [
+            i for i in range(num_zones_to_consider) if (all_zone_names[i] or "").strip()
+        ]
+    else:
+        zone_indexes_to_create = list(range(num_zones_to_consider))
+
     _LOGGER.debug(
-        "Setting up %s Zone Binary Sensors (Limit: %s, Available: %s)",
-        num_zones_to_create,
+        "Setting up %s Zone Binary Sensors (Limit: %s, Available: %s, Panel model: %s)",
+        len(zone_indexes_to_create),
         limit_zones,
         len(all_zone_names),
+        panel_model,
     )
-    for i in range(num_zones_to_create):
+    for i in zone_indexes_to_create:
         zone_name = (
-            all_zone_names[i]
+            (all_zone_names[i] or "").strip()
             if i < len(all_zone_names) and all_zone_names[i]
             else f"Zone {i + 1}"
         )
