@@ -43,6 +43,31 @@ from .panel_profiles import PANEL_MODEL_10100
 
 _LOGGER = logging.getLogger(__name__)
 
+# SmartLiving 10100/10100L command index map confirmed by field scans on the
+# test panel. Live 0x2002 state uses zone_id directly, but write command 0x2009
+# uses a physical/logical terminal command index with gaps for expansions,
+# unused terminals, outputs, and radio devices.
+SMARTLIVING_10100_ZONE_COMMAND_INDEX_MAP: dict[int, int] = {
+    1: 0,
+    2: 1,
+    3: 2,
+    4: 3,
+    5: 4,
+    6: 5,
+    7: 6,
+    8: 7,
+    9: 8,
+    10: 9,
+    12: 35,
+    13: 36,
+    14: 37,
+    28: 40,
+    29: 41,
+    30: 42,
+    31: 43,
+    32: 44,
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -121,14 +146,15 @@ async def async_setup_entry(
 
     if all_zone_names:
         if panel_model == PANEL_MODEL_10100:
-            # SmartLiving 10100/10100L: field tests confirmed that live exclusion
-            # state at 0x2002 is a direct zone bitmask and the 0x2009 command uses
-            # a direct zero-based logical zone index. Do not use the legacy
-            # GET_ZONE_INDEX_MAP/internal_index parser on this profile.
+            # SmartLiving 10100/10100L: read state at 0x2002 is a direct zone
+            # bitmask, but write command 0x2009 uses a physical/logical command
+            # index. Only expose switches for named zones with a known, field-
+            # confirmed command index.
             created_10100_zone_switches = 0
             skipped_empty_zone_names = 0
+            skipped_without_command_index = 0
             _LOGGER.debug(
-                "Setting up SmartLiving 10100/10100L zone exclusion switches using direct logical zone indices "
+                "Setting up SmartLiving 10100/10100L zone exclusion switches using field-confirmed command indices "
                 "(Limit: %s, Available: %s)",
                 limit_zones,
                 len(all_zone_names),
@@ -136,11 +162,23 @@ async def async_setup_entry(
 
             for zone_index_0_based in range(num_zones_to_create):
                 zone_id_1_based = zone_index_0_based + 1
-                display_zone_name = all_zone_names[zone_index_0_based]
+                display_zone_name = (all_zone_names[zone_index_0_based] or "").strip()
 
                 # Avoid exposing empty/unprogrammed slots as controllable bypass switches.
                 if not display_zone_name:
                     skipped_empty_zone_names += 1
+                    continue
+
+                command_index = SMARTLIVING_10100_ZONE_COMMAND_INDEX_MAP.get(
+                    zone_id_1_based
+                )
+                if command_index is None:
+                    skipped_without_command_index += 1
+                    _LOGGER.info(
+                        "Skipping SmartLiving 10100/10100L zone switch for Zone %s (%s): no field-confirmed command index yet",
+                        zone_id_1_based,
+                        display_zone_name,
+                    )
                     continue
 
                 switches_to_add.append(
@@ -152,18 +190,19 @@ async def async_setup_entry(
                         system_info,
                         zone_id_1_based,
                         display_zone_name,
-                        zone_index_0_based,
-                        "logical_zone_index_zero_based",
+                        command_index,
+                        "smartliving_10100_field_map",
                     )
                 )
                 created_10100_zone_switches += 1
 
             _LOGGER.info(
-                "Added %s SmartLiving 10100/10100L zone exclusion switches for %s using direct logical indices; "
-                "skipped %s empty zone-name slots",
+                "Added %s SmartLiving 10100/10100L zone exclusion switches for %s using field-confirmed command indices; "
+                "skipped %s empty zone-name slots and %s named zones without command index",
                 created_10100_zone_switches,
                 entry.title,
                 skipped_empty_zone_names,
+                skipped_without_command_index,
             )
         else:
             zones_config = initial_panel_config.get(KEY_INIT_ZONES_CONFIG, {})
