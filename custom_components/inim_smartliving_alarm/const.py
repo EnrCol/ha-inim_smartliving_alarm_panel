@@ -20,6 +20,7 @@ CONF_PIN = "pin"
 CONF_POLLING_INTERVAL = "polling_interval"
 CONF_PANEL_NAME = "panel_name"
 CONF_PANEL_MODEL = "panel_model"
+CONF_REFRESH_INITIAL_CONFIG = "refresh_initial_panel_config"
 
 # Keys for limiting imported entities and events
 CONF_LIMIT_AREAS = "limit_areas"
@@ -62,6 +63,12 @@ SYSTEM_MAX_EVENT_LOG_SIZE = 100  # System limit of events to store, increasing t
 DATA_API_CLIENT = "api_client"
 DATA_COORDINATOR = "coordinator"
 DATA_INITIAL_PANEL_CONFIG = "initial_panel_config"
+DATA_INITIAL_PANEL_CONFIG_REVISION = "initial_panel_config_revision"
+
+# Bump this whenever profile memory offsets or initial static panel data parsing changes.
+# Existing entries with an older/missing revision will refresh initial_panel_config on startup/options.
+INITIAL_PANEL_CONFIG_REVISION = 3
+
 # Static configuration fetched by config_flow (e.g., zone names, scenario names)
 # will be stored in entry.data and entry.options by the config_flow itself.
 # For example, config_flow might store the result of get_initial_panel_configuration()
