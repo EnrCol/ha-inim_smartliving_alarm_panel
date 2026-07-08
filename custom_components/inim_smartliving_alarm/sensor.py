@@ -23,6 +23,8 @@ from .const import (
     KEY_INIT_AREAS,
     KEY_INIT_KEYBOARD_NAMES,
     KEY_INIT_KEYBOARDS,
+    KEY_INIT_READER_NAMES,
+    KEY_INIT_READERS,
     KEY_INIT_SCENARIO_NAMES,
     KEY_INIT_SCENARIOS,
     KEY_INIT_SYSTEM_INFO,
@@ -301,10 +303,16 @@ class InimEventLogSensor(BaseInimSensorEntity):
             SYSTEM_MAX_EVENT_LOG_SIZE,  # Cap with system max
         )
 
-        reader_names_str = config_entry.options.get(CONF_READER_NAMES, "")
-        self._reader_names = [
-            name.strip() for name in reader_names_str.split(",") if name.strip()
+        auto_reader_names = initial_panel_config.get(KEY_INIT_READERS, {}).get(
+            KEY_INIT_READER_NAMES, []
+        )
+        manual_reader_names_str = config_entry.options.get(CONF_READER_NAMES, "")
+        manual_reader_names = [
+            name.strip() for name in manual_reader_names_str.split(",") if name.strip()
         ]
+        # Manual names remain an override/fallback, but profile-based names from the
+        # panel are now preferred when available.
+        self._reader_names = auto_reader_names or manual_reader_names
 
         self._event_log: list[
             dict[str, Any]
@@ -507,5 +515,6 @@ class InimEventLogSensor(BaseInimSensorEntity):
             "latest_event_timestamp": latest_event_in_log_timestamp,
             "event_log_size_configured": self._event_log_display_size,
             "event_log_count_current": len(self._event_log),
+            "reader_names_source": "panel" if self._reader_names else "manual_or_empty",
             "event_log": self._event_log,
         }
