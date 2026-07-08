@@ -1,6 +1,7 @@
 """The Inim Alarm integration."""
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -14,9 +15,12 @@ from .const import (
     CONF_PORT,
     DATA_API_CLIENT,
     DATA_COORDINATOR,
+    DATA_INITIAL_PANEL_CONFIG,
+    DATA_INITIAL_PANEL_CONFIG_REVISION,
     DEFAULT_PANEL_MODEL,
     DEFAULT_POLLING_INTERVAL,
     DOMAIN,
+    INITIAL_PANEL_CONFIG_REVISION,
     PLATFORMS,
 )
 
@@ -38,6 +42,72 @@ _LOGGER = logging.getLogger(__name__)
 #   response observed on SmartLiving 10100 panels.
 apply_panel_profile_api_patches()
 apply_smartliving_10100_precheck_fix()
+
+_ESSENTIAL_INITIAL_CONFIG_KEYS = (
+    "system_info",
+    "areas",
+    "zones",
+    "zones_config",
+    "scenarios",
+    "scenario_activations",
+)
+
+
+def _initial_config_is_usable(initial_config: dict[str, Any] | None) -> bool:
+    """Return True when initial panel config has all essential sections."""
+    if not initial_config:
+        return False
+    return all(initial_config.get(key) is not None for key in _ESSENTIAL_INITIAL_CONFIG_KEYS)
+
+
+async def _refresh_initial_config_if_stale(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    api: InimAlarmAPI,
+    panel_model: str,
+) -> None:
+    """Refresh stored static panel data when the parser/profile revision changed."""
+    stored_revision = entry.data.get(DATA_INITIAL_PANEL_CONFIG_REVISION)
+    if stored_revision == INITIAL_PANEL_CONFIG_REVISION and _initial_config_is_usable(
+        entry.data.get(DATA_INITIAL_PANEL_CONFIG)
+    ):
+        return
+
+    _LOGGER.info(
+        "Refreshing stored Inim initial panel config for %s: stored_revision=%s current_revision=%s panel_model=%s",
+        entry.title,
+        stored_revision,
+        INITIAL_PANEL_CONFIG_REVISION,
+        panel_model,
+    )
+
+    try:
+        refreshed_config = await hass.async_add_executor_job(
+            api.get_initial_panel_configuration
+        )
+    except Exception as exc:  # Keep the old config if refresh fails at startup.
+        _LOGGER.warning(
+            "Could not refresh initial panel config for %s; keeping stored config: %s",
+            entry.title,
+            exc,
+        )
+        return
+
+    if not _initial_config_is_usable(refreshed_config):
+        _LOGGER.warning(
+            "Initial panel config refresh for %s returned incomplete data; keeping stored config",
+            entry.title,
+        )
+        return
+
+    new_data = {
+        **entry.data,
+        CONF_PANEL_MODEL: panel_model,
+        DATA_INITIAL_PANEL_CONFIG: refreshed_config,
+        DATA_INITIAL_PANEL_CONFIG_REVISION: INITIAL_PANEL_CONFIG_REVISION,
+    }
+    hass.config_entries.async_update_entry(entry, data=new_data)
+    _LOGGER.info("Stored Inim initial panel config refreshed for %s", entry.title)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -63,6 +133,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     api = InimAlarmAPI(host=host, port=port, pin_code_str=pin)
     configure_api_for_panel(api, panel_model)
+
+    # Refresh static config before platforms are created if parser/profile offsets changed.
+    await _refresh_initial_config_if_stale(hass, entry, api, panel_model)
 
     # Create the custom coordinator instance
     coordinator_name = f"{DOMAIN} data ({entry.title})"
