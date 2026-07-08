@@ -16,6 +16,7 @@ from .const import (
     CONF_LIMIT_AREAS,
     CONF_LIMIT_SCENARIOS,
     CONF_LIMIT_ZONES,
+    CONF_PANEL_MODEL,
     CONF_PANEL_NAME,
     CONF_POLLING_INTERVAL,
     CONF_READER_NAMES,
@@ -29,29 +30,47 @@ from .const import (
     DEFAULT_LIMIT_AREAS,
     DEFAULT_LIMIT_SCENARIOS,
     DEFAULT_LIMIT_ZONES,
+    DEFAULT_PANEL_MODEL,
     DEFAULT_PANEL_NAME,
     DEFAULT_POLLING_INTERVAL,
     DEFAULT_PORT,
     DOMAIN,
+    SYSTEM_MAX_AREAS,
     SYSTEM_MAX_EVENT_LOG_SIZE,
+    SYSTEM_MAX_SCENARIOS,
+    SYSTEM_MAX_ZONES,
 )
 from .inim_api import InimAlarmAPI
+from .panel_profiles import (
+    PANEL_MODEL_OPTIONS,
+    apply_panel_profile_api_patches,
+    configure_api_for_panel,
+    get_panel_profile,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
+# Ensure config-flow validation uses the same profile-aware API methods as runtime.
+apply_panel_profile_api_patches()
+
 
 async def _validate_connection_and_fetch_initial_config(
-    hass: HomeAssistant, host: str, port: int, pin: str
+    hass: HomeAssistant,
+    host: str,
+    port: int,
+    pin: str,
+    panel_model: str | None = DEFAULT_PANEL_MODEL,
 ) -> dict[str, Any]:
     """Validate connection details by fetching initial panel configuration."""
 
-    # For validation, API uses its internal defaults for max areas/zones if not specified.
     api = InimAlarmAPI(host=host, port=port, pin_code_str=pin)
+    configure_api_for_panel(api, panel_model)
 
     _LOGGER.debug(
-        "Attempting to fetch initial panel configuration from %s:%s for validation",
+        "Attempting to fetch initial panel configuration from %s:%s for validation using panel model %s",
         host,
         port,
+        panel_model,
     )
 
     initial_config = await hass.async_add_executor_job(
@@ -120,7 +139,7 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step (host, port, pin, panel name)."""
+        """Handle the initial step (host, port, pin, panel model, panel name)."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -142,6 +161,7 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         user_input[CONF_HOST],
                         user_input[CONF_PORT],
                         user_input[CONF_PIN],
+                        user_input.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
                     )
                 )
                 self._flow_data[DATA_INITIAL_PANEL_CONFIG] = initial_panel_config
@@ -200,6 +220,12 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                 ): str,
                 vol.Optional(
+                    CONF_PANEL_MODEL,
+                    default=self._flow_data.get("user_input_step1", {}).get(
+                        CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL
+                    ),
+                ): vol.In(PANEL_MODEL_OPTIONS),
+                vol.Optional(
                     CONF_PANEL_NAME,
                     default=self._flow_data.get("user_input_step1", {}).get(
                         CONF_PANEL_NAME, DEFAULT_PANEL_NAME
@@ -219,6 +245,7 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         step1_data = self._flow_data["user_input_step1"]
         initial_config_data = self._flow_data[DATA_INITIAL_PANEL_CONFIG]
+        panel_profile = get_panel_profile(step1_data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL))
 
         # Prepare scenario choices for the form
         scenario_names_data = initial_config_data.get("scenarios", {})
@@ -236,11 +263,13 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_HOST: step1_data[CONF_HOST],
                 CONF_PORT: step1_data[CONF_PORT],
                 CONF_PIN: step1_data[CONF_PIN],
+                CONF_PANEL_MODEL: step1_data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
                 CONF_PANEL_NAME: step1_data.get(CONF_PANEL_NAME, DEFAULT_PANEL_NAME),
                 DATA_INITIAL_PANEL_CONFIG: initial_config_data,  # Store all fetched initial data
             }
 
             final_options_for_entry = {
+                CONF_PANEL_MODEL: step1_data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
                 CONF_POLLING_INTERVAL: user_input[CONF_POLLING_INTERVAL],
                 CONF_LIMIT_AREAS: user_input[CONF_LIMIT_AREAS],
                 CONF_LIMIT_ZONES: user_input[CONF_LIMIT_ZONES],
@@ -267,7 +296,7 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 title=title, data=final_data_for_entry, options=final_options_for_entry
             )
 
-        # Schema for this step, using defaults from step1 if available for limits/polling
+        # Schema for this step, using profile defaults for panel capability limits.
         initial_options_schema_dict = {
             vol.Optional(
                 CONF_POLLING_INTERVAL,
@@ -275,16 +304,16 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
             vol.Optional(
                 CONF_LIMIT_AREAS,
-                default=step1_data.get(CONF_LIMIT_AREAS, DEFAULT_LIMIT_AREAS),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=16)),
+                default=step1_data.get(CONF_LIMIT_AREAS, int(panel_profile["max_areas"])),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_AREAS)),
             vol.Optional(
                 CONF_LIMIT_ZONES,
-                default=step1_data.get(CONF_LIMIT_ZONES, DEFAULT_LIMIT_ZONES),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+                default=step1_data.get(CONF_LIMIT_ZONES, int(panel_profile["max_zones"])),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_ZONES)),
             vol.Optional(
                 CONF_LIMIT_SCENARIOS,
-                default=step1_data.get(CONF_LIMIT_SCENARIOS, DEFAULT_LIMIT_SCENARIOS),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=30)),
+                default=step1_data.get(CONF_LIMIT_SCENARIOS, int(panel_profile["max_scenarios"])),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_SCENARIOS)),
             vol.Optional(CONF_EVENT_LOG_SIZE, default=DEFAULT_EVENT_LOG_SIZE): vol.All(
                 vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_EVENT_LOG_SIZE)
             ),
@@ -340,48 +369,58 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
         # Combine initial data (from entry.data) with current options (from entry.options)
         # for populating form defaults correctly.
         self.current_pin = config_entry.data.get(CONF_PIN, "")  # Get current PIN
+        self.current_panel_model = config_entry.options.get(
+            CONF_PANEL_MODEL,
+            config_entry.data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
+        )
         self.current_settings = {**config_entry.data, **config_entry.options}
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage the main options for the Inim Alarm integration, including PIN change."""
+        """Manage the main options for the Inim Alarm integration, including PIN/model change."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             updated_options = {}
             new_data = (
                 self.config_entry.data.copy()
-            )  # Start with existing data for potential PIN update
+            )  # Start with existing data for potential PIN/model update
 
-            # Handle PIN change
-            new_pin = user_input.get(CONF_PIN)
-            if new_pin and new_pin != self.current_pin:
+            new_pin = user_input.get(CONF_PIN) or self.current_pin
+            new_panel_model = user_input.get(CONF_PANEL_MODEL, self.current_panel_model)
+            model_changed = new_panel_model != self.current_panel_model
+            pin_changed = new_pin != self.current_pin
+
+            if pin_changed or model_changed:
                 _LOGGER.info(
-                    "Attempting to validate new PIN for %s",
+                    "Attempting to validate updated PIN/model for %s",
                     self.config_entry.data[CONF_HOST],
                 )
                 try:
-                    await _validate_connection_and_fetch_initial_config(
+                    refreshed_config = await _validate_connection_and_fetch_initial_config(
                         self.hass,
                         self.config_entry.data[CONF_HOST],
                         self.config_entry.data[CONF_PORT],
                         new_pin,
+                        new_panel_model,
                     )
                     _LOGGER.info(
-                        "New PIN validated successfully for %s",
+                        "Updated PIN/model validated successfully for %s",
                         self.config_entry.data[CONF_HOST],
                     )
-                    new_data[CONF_PIN] = new_pin  # Update PIN in data
+                    new_data[CONF_PIN] = new_pin
+                    new_data[CONF_PANEL_MODEL] = new_panel_model
+                    new_data[DATA_INITIAL_PANEL_CONFIG] = refreshed_config
                 except ConnectionError:
                     _LOGGER.warning(
-                        "Connection failed with new PIN for %s",
+                        "Connection failed with updated PIN/model for %s",
                         self.config_entry.data[CONF_HOST],
                     )
                     errors[CONF_PIN] = "cannot_connect_new_pin"
                 except ValueError as vex:
                     _LOGGER.warning(
-                        "PIN validation error for %s: %s",
+                        "PIN/model validation error for %s: %s",
                         self.config_entry.data[CONF_HOST],
                         vex,
                     )
@@ -390,24 +429,23 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                     else:
                         errors[CONF_PIN] = "pin_validation_error"
                 except Exception as exc:
-                    _LOGGER.exception("Unexpected error validating new PIN: %s", exc)
+                    _LOGGER.exception("Unexpected error validating updated PIN/model: %s", exc)
                     errors[CONF_PIN] = "unknown_pin_error"
 
             if not errors.get(
                 CONF_PIN
-            ):  # If PIN validation passed or PIN wasn't changed
-                if (
-                    new_data != self.config_entry.data
-                ):  # If PIN was changed and validated
+            ):  # If validation passed or PIN/model wasn't changed
+                if new_data != self.config_entry.data:
                     self.hass.config_entries.async_update_entry(
                         self.config_entry, data=new_data
                     )
                     _LOGGER.info(
-                        "Updated PIN in config entry data for %s",
+                        "Updated config entry data for %s",
                         self.config_entry.title,
                     )
 
                 # Process other options
+                updated_options[CONF_PANEL_MODEL] = new_panel_model
                 updated_options[CONF_POLLING_INTERVAL] = user_input.get(
                     CONF_POLLING_INTERVAL
                 )
@@ -446,6 +484,8 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                 return self.async_create_entry(title="", data=updated_options)
             # If there was a PIN error, re-show the form with the error
 
+        profile = get_panel_profile(self.current_panel_model)
+
         # Prepare scenario choices for the form
         scenario_names_data = self.initial_panel_config.get("scenarios", {})
         scenario_names_list = scenario_names_data.get("names", [])
@@ -462,19 +502,25 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_PIN, description={"suggested_value": self.current_pin}
             ): str,  # Show current PIN for re-entry/change
             vol.Optional(
+                CONF_PANEL_MODEL,
+                default=self.current_panel_model,
+            ): vol.In(PANEL_MODEL_OPTIONS),
+            vol.Optional(
                 CONF_POLLING_INTERVAL,
                 default=self.current_settings.get(CONF_POLLING_INTERVAL),
             ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
             vol.Optional(
-                CONF_LIMIT_AREAS, default=self.current_settings.get(CONF_LIMIT_AREAS)
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=16)),
+                CONF_LIMIT_AREAS,
+                default=self.current_settings.get(CONF_LIMIT_AREAS, int(profile["max_areas"])),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_AREAS)),
             vol.Optional(
-                CONF_LIMIT_ZONES, default=self.current_settings.get(CONF_LIMIT_ZONES)
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+                CONF_LIMIT_ZONES,
+                default=self.current_settings.get(CONF_LIMIT_ZONES, int(profile["max_zones"])),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_ZONES)),
             vol.Optional(
                 CONF_LIMIT_SCENARIOS,
-                default=self.current_settings.get(CONF_LIMIT_SCENARIOS),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=30)),
+                default=self.current_settings.get(CONF_LIMIT_SCENARIOS, int(profile["max_scenarios"])),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_SCENARIOS)),
             vol.Optional(
                 CONF_EVENT_LOG_SIZE,
                 default=self.current_settings.get(

@@ -19,6 +19,7 @@ CONF_PORT = "port"
 CONF_PIN = "pin"
 CONF_POLLING_INTERVAL = "polling_interval"
 CONF_PANEL_NAME = "panel_name"
+CONF_PANEL_MODEL = "panel_model"
 
 # Keys for limiting imported entities and events
 CONF_LIMIT_AREAS = "limit_areas"
@@ -39,18 +40,21 @@ CONF_SCENARIO_DISARM = "scenario_disarm"
 DEFAULT_POLLING_INTERVAL = 2  # seconds
 DEFAULT_PORT = 5004  # Common default for SmartLAN/SI, user can override
 DEFAULT_PANEL_NAME = "Inim Smartliving"  # Default if user doesn't provide one
+DEFAULT_PANEL_MODEL = "smartliving_1050"
 
 # Default limits for entities. Users can reduce these.
-# These should reflect typical maximums or desired "import all" values.
-# The Inim SmartLiving 1050 panel supports:
-# - 10 Areas
-# - 50 Zones
-# - 30 Scenarios
+# These defaults intentionally remain SmartLiving 1050/1050L-compatible.
+# SmartLiving 10100/10100L uses a selectable profile with higher limits.
 DEFAULT_LIMIT_AREAS = 10
 DEFAULT_LIMIT_ZONES = 50
 DEFAULT_LIMIT_SCENARIOS = 30
 
-# Default limiys for imported events
+# Maximum UI limits supported by the integration profiles.
+SYSTEM_MAX_AREAS = 15
+SYSTEM_MAX_ZONES = 100
+SYSTEM_MAX_SCENARIOS = 30
+
+# Default limits for imported events
 DEFAULT_EVENT_LOG_SIZE = 50  # Default number of events to store
 SYSTEM_MAX_EVENT_LOG_SIZE = 100  # System limit of events to store, increasing this may cause exceeding the maximum size of 16384 bytes for the sensor attribute
 
