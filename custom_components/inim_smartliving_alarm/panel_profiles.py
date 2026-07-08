@@ -4,10 +4,9 @@ The original integration was effectively modelled around SmartLiving 1050/1050L
 limits: 50 zones, 10 areas, 10 keyboards and 20 readers. SmartLiving 10100/10100L
 has a larger memory layout: 100 zones, 15 areas, 15 keyboards and 30 readers.
 
-Names are stored as 16-byte ASCII records. At least the area and zone name
-blocks are contiguous: when a panel has 15 areas, zone names start 5 records
-later than on 10-area panels. Reader/scenario offsets are also profile-specific
-and are handled here for test builds.
+Names are stored as 16-byte ASCII records. SmartLiving 10100/10100L uses a
+profile-specific memory map confirmed by a local memory dump, so the major name
+blocks are configured explicitly instead of inferred where possible.
 """
 
 from __future__ import annotations
@@ -43,10 +42,9 @@ PANEL_PROFILES: dict[str, dict[str, int | str]] = {
         "max_keyboards": 10,
         "max_readers": 20,
         "area_names_start": 0x0000,
+        "zone_names_start": 0x00A0,
         "keyboard_names_start": 0x0B40,
-        # In the 1050-compatible layout, the current scenario-name block starts
-        # at 0x1450. With 20 reader records immediately before it, readers start
-        # at 0x1310. This preserves the old scenario offset.
+        # Keep the 1050-compatible scenario offset used by the original integration.
         "reader_names_start": 0x1310,
         "scenario_names_start": 0x1450,
     },
@@ -57,14 +55,14 @@ PANEL_PROFILES: dict[str, dict[str, int | str]] = {
         "max_scenarios": 30,
         "max_keyboards": 15,
         "max_readers": 30,
+        # Confirmed on SmartLiving 10100/10100L dump from the test panel:
+        # 0x0000..0x00E0 area names, 0x00F0 first zone name.
         "area_names_start": 0x0000,
-        "keyboard_names_start": 0x0B40,
-        # Test offset derived from the observed symptom: scenario index 0 was
-        # read as LETTORE 011 on a 10100. That means the old 0x1450 scenario
-        # offset points at reader record 11, so reader names likely begin at
-        # 0x13B0 and scenario names after 30 reader records at 0x1590.
+        "zone_names_start": 0x00F0,
+        # 0x13B0 reader 1, 0x1590 keyboard 1, 0x2350 scenario 1.
         "reader_names_start": 0x13B0,
-        "scenario_names_start": 0x1590,
+        "keyboard_names_start": 0x1590,
+        "scenario_names_start": 0x2350,
     },
 }
 
@@ -175,22 +173,15 @@ def _profile_get_areas(self: InimAlarmAPI) -> dict[str, Any] | None:
 
 
 def _profile_get_zones(self: InimAlarmAPI) -> dict[str, Any] | None:
-    """Read zone names after the selected profile's area-name block."""
-    profile = getattr(self, "panel_profile", get_panel_profile(None))
-    area_start = int(profile["area_names_start"])
-    max_areas = int(getattr(self, "system_max_areas", profile["max_areas"]))
-    max_zones = int(getattr(self, "system_max_zones", profile["max_zones"]))
-    zone_start = area_start + (max_areas * BYTES_PER_NAME)
-    total_length = max_zones * BYTES_PER_NAME
-
-    data_hex = _read_memory_range(self, zone_start, total_length)
-    if data_hex is None:
-        return None
-    try:
-        return {"raw_hex_full": data_hex, "zone_names": _decode_fixed_names(data_hex, max_zones)}
-    except Exception as err:
-        _LOGGER.error("Error parsing profile zone names: %s", err)
-        return {"raw_hex_full": data_hex, "error": str(err)}
+    """Read zone names using the selected profile zone-name offset."""
+    return _read_profile_names(
+        self,
+        start_key="zone_names_start",
+        count_attr="system_max_zones",
+        default_count=InimAlarmConstants.DEFAULT_SYSTEM_MAX_ZONES,
+        raw_key="raw_hex_full",
+        names_key="zone_names",
+    )
 
 
 def _profile_get_keyboard_names(self: InimAlarmAPI) -> dict[str, Any] | None:
