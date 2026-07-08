@@ -6,8 +6,8 @@ has a larger memory layout: 100 zones, 15 areas, 15 keyboards and 30 readers.
 
 Names are stored as 16-byte ASCII records. At least the area and zone name
 blocks are contiguous: when a panel has 15 areas, zone names start 5 records
-later than on 10-area panels. This module keeps the 1050 behaviour as default
-and applies 10100 limits only when that profile is selected.
+later than on 10-area panels. Reader/scenario offsets are also profile-specific
+and are handled here for test builds.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 import binascii
 import logging
 import math
+import time
 from typing import Any
 
 from .inim_api import InimAlarmAPI, InimAlarmConstants
@@ -43,6 +44,11 @@ PANEL_PROFILES: dict[str, dict[str, int | str]] = {
         "max_readers": 20,
         "area_names_start": 0x0000,
         "keyboard_names_start": 0x0B40,
+        # In the 1050-compatible layout, the current scenario-name block starts
+        # at 0x1450. With 20 reader records immediately before it, readers start
+        # at 0x1310. This preserves the old scenario offset.
+        "reader_names_start": 0x1310,
+        "scenario_names_start": 0x1450,
     },
     PANEL_MODEL_10100: {
         "label": "SmartLiving 10100 / 10100L",
@@ -53,6 +59,12 @@ PANEL_PROFILES: dict[str, dict[str, int | str]] = {
         "max_readers": 30,
         "area_names_start": 0x0000,
         "keyboard_names_start": 0x0B40,
+        # Test offset derived from the observed symptom: scenario index 0 was
+        # read as LETTORE 011 on a 10100. That means the old 0x1450 scenario
+        # offset points at reader record 11, so reader names likely begin at
+        # 0x13B0 and scenario names after 30 reader records at 0x1590.
+        "reader_names_start": 0x13B0,
+        "scenario_names_start": 0x1590,
     },
 }
 
@@ -128,19 +140,38 @@ def _decode_fixed_names(data_hex: str, count: int) -> list[str]:
     return names
 
 
-def _profile_get_areas(self: InimAlarmAPI) -> dict[str, Any] | None:
-    """Read area names using the selected panel profile area count."""
-    start = int(getattr(self, "panel_profile", get_panel_profile(None))["area_names_start"])
-    count = int(getattr(self, "system_max_areas", InimAlarmConstants.DEFAULT_SYSTEM_MAX_AREAS))
+def _read_profile_names(
+    self: InimAlarmAPI,
+    start_key: str,
+    count_attr: str,
+    default_count: int,
+    raw_key: str = "raw_hex",
+    names_key: str = "names",
+) -> dict[str, Any] | None:
+    """Read a profile-based fixed-name block."""
+    profile = getattr(self, "panel_profile", get_panel_profile(None))
+    start = int(profile[start_key])
+    count = int(getattr(self, count_attr, default_count))
     length = count * BYTES_PER_NAME
+
     data_hex = _read_memory_range(self, start, length)
     if data_hex is None:
         return None
     try:
-        return {"raw_hex": data_hex, "names": _decode_fixed_names(data_hex, count)}
+        return {raw_key: data_hex, names_key: _decode_fixed_names(data_hex, count)}
     except Exception as err:
-        _LOGGER.error("Error parsing profile area names: %s", err)
-        return {"raw_hex": data_hex, "error": str(err)}
+        _LOGGER.error("Error parsing profile names for %s: %s", start_key, err)
+        return {raw_key: data_hex, "error": str(err)}
+
+
+def _profile_get_areas(self: InimAlarmAPI) -> dict[str, Any] | None:
+    """Read area names using the selected panel profile area count."""
+    return _read_profile_names(
+        self,
+        start_key="area_names_start",
+        count_attr="system_max_areas",
+        default_count=InimAlarmConstants.DEFAULT_SYSTEM_MAX_AREAS,
+    )
 
 
 def _profile_get_zones(self: InimAlarmAPI) -> dict[str, Any] | None:
@@ -164,47 +195,32 @@ def _profile_get_zones(self: InimAlarmAPI) -> dict[str, Any] | None:
 
 def _profile_get_keyboard_names(self: InimAlarmAPI) -> dict[str, Any] | None:
     """Read keyboard names using the selected profile keyboard count."""
-    profile = getattr(self, "panel_profile", get_panel_profile(None))
-    start = int(profile["keyboard_names_start"])
-    count = int(getattr(self, "system_max_keyboards", profile["max_keyboards"]))
-    length = count * BYTES_PER_NAME
+    return _read_profile_names(
+        self,
+        start_key="keyboard_names_start",
+        count_attr="system_max_keyboards",
+        default_count=10,
+    )
 
-    data_hex = _read_memory_range(self, start, length)
-    if data_hex is None:
-        return None
-    try:
-        return {"raw_hex": data_hex, "names": _decode_fixed_names(data_hex, count)}
-    except Exception as err:
-        _LOGGER.error("Error parsing profile keyboard names: %s", err)
-        return {"raw_hex": data_hex, "error": str(err)}
+
+def _profile_get_reader_names(self: InimAlarmAPI) -> dict[str, Any] | None:
+    """Read reader names using the selected profile reader count."""
+    return _read_profile_names(
+        self,
+        start_key="reader_names_start",
+        count_attr="system_max_readers",
+        default_count=20,
+    )
 
 
 def _profile_get_scenarios(self: InimAlarmAPI) -> dict[str, Any] | None:
-    """Read scenario names with the current fixed command offsets and profile count.
-
-    This test build keeps the known scenario-name command offsets. It only replaces
-    the hardcoded parser count with the selected panel profile count. If 10100 still
-    returns reader names here, the next diagnostic step is to locate the 10100
-    scenario-name offset.
-    """
-    scenario_name_cmd_keys = ["GET_SCENARIO_NAMES_1", "GET_SCENARIO_NAMES_2"]
-    all_scenario_data_hex = ""
-    for cmd_key in scenario_name_cmd_keys:
-        spec = InimAlarmConstants.COMMAND_SPECS[cmd_key]
-        response_data_hex_part = self._send_command_core(
-            spec["cmd_full"], expect_specific_response_len=spec["resp_len"]
-        )
-        if not response_data_hex_part:
-            _LOGGER.error("Failed to get part of scenario names for %s", cmd_key)
-            return None
-        all_scenario_data_hex += response_data_hex_part
-
-    count = int(getattr(self, "system_max_scenarios", InimAlarmConstants.DEFAULT_SYSTEM_MAX_SCENARIOS))
-    try:
-        return {"raw_hex": all_scenario_data_hex, "names": _decode_fixed_names(all_scenario_data_hex, count)}
-    except Exception as err:
-        _LOGGER.error("Error parsing profile scenario names: %s", err)
-        return {"raw_hex": all_scenario_data_hex, "error": str(err)}
+    """Read scenario names from the selected profile scenario-name offset."""
+    return _read_profile_names(
+        self,
+        start_key="scenario_names_start",
+        count_attr="system_max_scenarios",
+        default_count=InimAlarmConstants.DEFAULT_SYSTEM_MAX_SCENARIOS,
+    )
 
 
 def _profile_get_areas_status(self: InimAlarmAPI) -> dict[str, Any] | None:
@@ -271,7 +287,8 @@ def _profile_get_scenario_activations(self: InimAlarmAPI):
 
     bytes_per_scenario_activation = 8
     scenario_count = int(getattr(self, "system_max_scenarios", InimAlarmConstants.DEFAULT_SYSTEM_MAX_SCENARIOS))
-    area_bytes_to_parse = min(math.ceil(int(getattr(self, "system_max_areas", 10)) / 2), bytes_per_scenario_activation)
+    max_areas = int(getattr(self, "system_max_areas", 10))
+    area_bytes_to_parse = min(math.ceil(max_areas / 2), bytes_per_scenario_activation)
     action_map = {
         InimAlarmConstants.AREA_ACTION_ARM: "arm",
         InimAlarmConstants.AREA_ACTION_DISARM: "disarm",
@@ -303,9 +320,9 @@ def _profile_get_scenario_activations(self: InimAlarmAPI):
             action_char_for_msn_slot = byte_val_hex[0]
             action_char_for_lsn_slot = byte_val_hex[1]
 
-            if area_num_in_lsn_slot <= int(getattr(self, "system_max_areas", 10)):
+            if area_num_in_lsn_slot <= max_areas:
                 parsed_area_actions[area_num_in_lsn_slot] = action_map.get(action_char_for_lsn_slot, "unknown")
-            if area_num_in_msn_slot <= int(getattr(self, "system_max_areas", 10)):
+            if area_num_in_msn_slot <= max_areas:
                 parsed_area_actions[area_num_in_msn_slot] = action_map.get(action_char_for_msn_slot, "unknown")
 
         all_scenario_details.append(
@@ -320,6 +337,44 @@ def _profile_get_scenario_activations(self: InimAlarmAPI):
     return all_scenario_details
 
 
+def _profile_get_initial_panel_configuration(self: InimAlarmAPI):
+    """Fetch initial configuration, including profile-aware reader names."""
+    with self._api_lock:
+        _LOGGER.debug("Lock acquired for profile get_initial_panel_configuration")
+        if not self.connect():
+            _LOGGER.error("Failed to connect for initial config.")
+            return None
+        cfg: dict[str, Any] = {"errors": []}
+        try:
+            methods_to_call = [
+                ("system_info", self.get_system_info),
+                ("areas", self.get_areas),
+                ("zones", self.get_zones),
+                ("zones_config", self.get_zones_config),
+                ("scenarios", self.get_scenarios),
+                ("scenario_activations", self.get_scenario_activations),
+                ("keyboard_names", self.get_keyboard_names),
+                ("reader_names", self.get_reader_names),
+            ]
+            for key, method in methods_to_call:
+                _LOGGER.debug("Fetching %s...", key)
+                cfg[key] = method()
+                if cfg[key] is None:
+                    cfg["errors"].append(f"Failed {key}.")
+                time.sleep(0.1)
+        except Exception as err:
+            _LOGGER.error("Exception during initial config fetch: %s", err)
+            cfg["errors"].append(f"Overall exc: {str(err)}")
+        finally:
+            self.disconnect()
+
+        if cfg["errors"]:
+            _LOGGER.warning("Initial config retrieval completed with errors: %s", cfg["errors"])
+        else:
+            _LOGGER.info("Initial panel configuration retrieval completed successfully.")
+        return cfg
+
+
 def apply_panel_profile_api_patches() -> None:
     """Apply profile-aware API methods.
 
@@ -328,6 +383,8 @@ def apply_panel_profile_api_patches() -> None:
     InimAlarmAPI.get_areas = _profile_get_areas
     InimAlarmAPI.get_zones = _profile_get_zones
     InimAlarmAPI.get_keyboard_names = _profile_get_keyboard_names
+    InimAlarmAPI.get_reader_names = _profile_get_reader_names
     InimAlarmAPI.get_scenarios = _profile_get_scenarios
     InimAlarmAPI.get_areas_status = _profile_get_areas_status
     InimAlarmAPI.get_scenario_activations = _profile_get_scenario_activations
+    InimAlarmAPI.get_initial_panel_configuration = _profile_get_initial_panel_configuration
