@@ -14,12 +14,14 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     CONF_LIMIT_AREAS,
     CONF_LIMIT_ZONES,
+    CONF_PANEL_MODEL,
     CONF_PANEL_NAME,
     DATA_API_CLIENT,
     DATA_COORDINATOR,
     DATA_INITIAL_PANEL_CONFIG,
     DEFAULT_LIMIT_AREAS,
     DEFAULT_LIMIT_ZONES,
+    DEFAULT_PANEL_MODEL,
     DEFAULT_PANEL_NAME,
     DOMAIN,
     KEY_INIT_AREA_NAMES,
@@ -37,6 +39,7 @@ from .const import (
     KEY_LIVE_ZONES_EXCLUDED_STATUS,
 )
 from .inim_api import InimAlarmAPI
+from .panel_profiles import PANEL_MODEL_10100
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +60,10 @@ async def async_setup_entry(
     initial_panel_config = entry.data.get(DATA_INITIAL_PANEL_CONFIG, {})
     system_info = initial_panel_config.get(KEY_INIT_SYSTEM_INFO, {})
     panel_display_name = entry.data.get(CONF_PANEL_NAME, DEFAULT_PANEL_NAME)
+    panel_model = entry.options.get(
+        CONF_PANEL_MODEL,
+        entry.data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
+    )
 
     switches_to_add = []
 
@@ -106,39 +113,35 @@ async def async_setup_entry(
         zone_names_data.get(KEY_INIT_ZONE_NAMES, []) if zone_names_data else []
     )
 
-    zones_config = initial_panel_config.get(KEY_INIT_ZONES_CONFIG, {})
-    zones_config_detailed = (
-        zones_config.get(KEY_INIT_ZONES_CONFIG_DETAILED, []) if zones_config else []
-    )
-
     limit_zones = entry.options.get(
         CONF_LIMIT_ZONES, entry.data.get(CONF_LIMIT_ZONES, DEFAULT_LIMIT_ZONES)
     )
 
     num_zones_to_create = min(len(all_zone_names), limit_zones)
 
-    if all_zone_names and zones_config_detailed:
-        # Apply the limit before iterating
-        zones_to_process = zones_config_detailed[:num_zones_to_create]
-        _LOGGER.debug(
-            "Setting up %s Zone Enabled Switches (Limit: %s, Available: %s)",
-            len(zones_to_process),
-            limit_zones,
-            len(zones_config_detailed),
-        )
+    if all_zone_names:
+        if panel_model == PANEL_MODEL_10100:
+            # SmartLiving 10100/10100L: field tests confirmed that live exclusion
+            # state at 0x2002 is a direct zone bitmask and the 0x2009 command uses
+            # a direct zero-based logical zone index. Do not use the legacy
+            # GET_ZONE_INDEX_MAP/internal_index parser on this profile.
+            created_10100_zone_switches = 0
+            skipped_empty_zone_names = 0
+            _LOGGER.debug(
+                "Setting up SmartLiving 10100/10100L zone exclusion switches using direct logical zone indices "
+                "(Limit: %s, Available: %s)",
+                limit_zones,
+                len(all_zone_names),
+            )
 
-        for zone_detail in zones_to_process:
-            zone_index_0_based = zone_detail.get("zone_index")
-            internal_index = zone_detail.get("internal_index")
-
-            if zone_index_0_based is not None and internal_index is not None:
+            for zone_index_0_based in range(num_zones_to_create):
                 zone_id_1_based = zone_index_0_based + 1
+                display_zone_name = all_zone_names[zone_index_0_based]
 
-                display_zone_name = (
-                    all_zone_names[zone_index_0_based]
-                    if zone_index_0_based < len(all_zone_names)
-                    else f"Zone {zone_id_1_based}"
-                )
+                # Avoid exposing empty/unprogrammed slots as controllable bypass switches.
+                if not display_zone_name:
+                    skipped_empty_zone_names += 1
+                    continue
 
                 switches_to_add.append(
                     InimZoneEnabledSwitch(
@@ -149,14 +152,74 @@ async def async_setup_entry(
                         system_info,
                         zone_id_1_based,
                         display_zone_name,
-                        internal_index,
+                        zone_index_0_based,
+                        "logical_zone_index_zero_based",
                     )
                 )
-            else:
-                _LOGGER.warning(
-                    "Skipping zone switch due to missing 'zone_index' or 'internal_index' in config details: %s",
-                    zone_detail,
+                created_10100_zone_switches += 1
+
+            _LOGGER.info(
+                "Added %s SmartLiving 10100/10100L zone exclusion switches for %s using direct logical indices; "
+                "skipped %s empty zone-name slots",
+                created_10100_zone_switches,
+                entry.title,
+                skipped_empty_zone_names,
+            )
+        else:
+            zones_config = initial_panel_config.get(KEY_INIT_ZONES_CONFIG, {})
+            zones_config_detailed = (
+                zones_config.get(KEY_INIT_ZONES_CONFIG_DETAILED, []) if zones_config else []
+            )
+
+            if zones_config_detailed:
+                zones_to_process = zones_config_detailed[:num_zones_to_create]
+                _LOGGER.debug(
+                    "Setting up %s Zone Enabled Switches (Limit: %s, Available: %s)",
+                    len(zones_to_process),
+                    limit_zones,
+                    len(zones_config_detailed),
                 )
+
+                skipped_without_internal_index = 0
+                for zone_detail in zones_to_process:
+                    zone_index_0_based = zone_detail.get("zone_index")
+                    internal_index = zone_detail.get("internal_index")
+
+                    if zone_index_0_based is not None and internal_index is not None:
+                        zone_id_1_based = zone_index_0_based + 1
+
+                        display_zone_name = (
+                            all_zone_names[zone_index_0_based]
+                            if zone_index_0_based < len(all_zone_names)
+                            else f"Zone {zone_id_1_based}"
+                        )
+
+                        switches_to_add.append(
+                            InimZoneEnabledSwitch(
+                                coordinator,
+                                api_client,
+                                entry,
+                                panel_display_name,
+                                system_info,
+                                zone_id_1_based,
+                                display_zone_name,
+                                internal_index,
+                                "internal_index_map",
+                            )
+                        )
+                    else:
+                        skipped_without_internal_index += 1
+                        _LOGGER.debug(
+                            "Skipping zone switch due to missing 'zone_index' or 'internal_index' in config details: %s",
+                            zone_detail,
+                        )
+
+                if skipped_without_internal_index:
+                    _LOGGER.info(
+                        "Skipped %s zone exclusion switches for %s because no valid internal_index was available",
+                        skipped_without_internal_index,
+                        entry.title,
+                    )
 
     if switches_to_add:
         async_add_entities(switches_to_add)
@@ -167,6 +230,7 @@ async def async_setup_entry(
         )
     else:
         _LOGGER.info("No Inim Alarm switch entities added for %s", entry.title)
+
 
 class InimAreaSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of an Inim Alarm Area as a switch."""
@@ -301,7 +365,8 @@ class InimZoneEnabledSwitch(CoordinatorEntity, SwitchEntity):
         system_info: dict[str, Any],
         zone_id_1_based: int,
         zone_name: str,
-        zone_internal_index: int,
+        zone_command_index: int,
+        zone_command_index_mode: str,
     ) -> None:
         super().__init__(coordinator)
         self.api_client = api_client
@@ -310,7 +375,8 @@ class InimZoneEnabledSwitch(CoordinatorEntity, SwitchEntity):
         self._system_info = system_info
         self._zone_id_1_based = zone_id_1_based
         self._zone_name = zone_name
-        self._zone_internal_index = zone_internal_index
+        self._zone_command_index = zone_command_index
+        self._zone_command_index_mode = zone_command_index_mode
         self._attr_name = f"{self._panel_display_name} Zone {self._zone_id_1_based} Enabled ({self._zone_name})"
         self._attr_unique_id = (
             f"{config_entry.entry_id}_zone_enabled_switch_{self._zone_id_1_based}"
@@ -364,13 +430,14 @@ class InimZoneEnabledSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on (enable the zone)."""
         _LOGGER.info(
-            "Enabling Zone %s (Internal Index: %s)",
+            "Enabling Zone %s (Command Index: %s, mode: %s)",
             self._zone_id_1_based,
-            self._zone_internal_index,
+            self._zone_command_index,
+            self._zone_command_index_mode,
         )
         func = functools.partial(
             self.api_client.execute_set_zone_excluded_status,
-            zone_internal_index=self._zone_internal_index,
+            zone_internal_index=self._zone_command_index,
             excluded_status=False,  # False means enable
         )
         if await self.hass.async_add_executor_job(func):
@@ -379,13 +446,14 @@ class InimZoneEnabledSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off (exclude/bypass the zone)."""
         _LOGGER.info(
-            "Excluding Zone %s (Internal Index: %s)",
+            "Excluding Zone %s (Command Index: %s, mode: %s)",
             self._zone_id_1_based,
-            self._zone_internal_index,
+            self._zone_command_index,
+            self._zone_command_index_mode,
         )
         func = functools.partial(
             self.api_client.execute_set_zone_excluded_status,
-            zone_internal_index=self._zone_internal_index,
+            zone_internal_index=self._zone_command_index,
             excluded_status=True,  # True means exclude
         )
         if await self.hass.async_add_executor_job(func):
@@ -397,5 +465,6 @@ class InimZoneEnabledSwitch(CoordinatorEntity, SwitchEntity):
         return {
             "zone_id": self._zone_id_1_based,
             "zone_name": self._zone_name,
-            "internal_index": self._zone_internal_index,
+            "command_index": self._zone_command_index,
+            "command_index_mode": self._zone_command_index_mode,
         }
