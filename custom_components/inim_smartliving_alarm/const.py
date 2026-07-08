@@ -75,6 +75,9 @@ DATA_INITIAL_PANEL_CONFIG = "initial_panel_config"
 KEY_INIT_KEYBOARDS = "keyboard_names"
 KEY_INIT_KEYBOARD_NAMES = "names"
 
+KEY_INIT_READERS = "reader_names"
+KEY_INIT_READER_NAMES = "names"
+
 KEY_INIT_SYSTEM_INFO = "system_info"
 KEY_INIT_SYSTEM_INFO_TYPE = "type"
 KEY_INIT_SYSTEM_INFO_VERSION = "version"
