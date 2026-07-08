@@ -8,11 +8,13 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_HOST,
+    CONF_PANEL_MODEL,
     CONF_PIN,
     CONF_POLLING_INTERVAL,
     CONF_PORT,
     DATA_API_CLIENT,
     DATA_COORDINATOR,
+    DEFAULT_PANEL_MODEL,
     DEFAULT_POLLING_INTERVAL,
     DOMAIN,
     PLATFORMS,
@@ -23,15 +25,18 @@ from .coordinator import InimDataUpdateCoordinator
 
 # Import API
 from .inim_api import InimAlarmAPI
+from .panel_profiles import apply_panel_profile_api_patches, configure_api_for_panel
 from .smartliving_10100 import apply_smartliving_10100_precheck_fix
 
 _LOGGER = logging.getLogger(__name__)
 
 
-# SmartLiving 10100 compatibility:
-# Keep the scenario activation pre-check enabled, but read its full 27-byte
-# response so no leftover bytes remain in the TCP socket before the activation
-# command. See smartliving_10100.py for the protocol notes and test history.
+# SmartLiving model compatibility:
+# - panel_profiles keeps the 1050-compatible layout as default and adds an
+#   explicit 10100/10100L profile for larger area/zone/keyboard counts.
+# - smartliving_10100 keeps the pre-check enabled but reads the full 27-byte
+#   response observed on SmartLiving 10100 panels.
+apply_panel_profile_api_patches()
 apply_smartliving_10100_precheck_fix()
 
 
@@ -46,6 +51,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     host = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
     pin = entry.data[CONF_PIN]
+    panel_model = entry.options.get(
+        CONF_PANEL_MODEL, entry.data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL)
+    )
 
     # Polling interval from options (if user changed it) or from initial data
     polling_interval = entry.options.get(
@@ -53,12 +61,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL),
     )
 
-    # Create API instance
-    # The API constructor can take system_max_areas and system_max_zones.
-    # These could be determined during config_flow (e.g., from get_initial_panel_configuration)
-    # and stored in entry.data if we want to be very specific per panel model.
-    # For now, using API defaults for these, which are sensible (e.g., 10 areas, 50 zones).
     api = InimAlarmAPI(host=host, port=port, pin_code_str=pin)
+    configure_api_for_panel(api, panel_model)
 
     # Create the custom coordinator instance
     coordinator_name = f"{DOMAIN} data ({entry.title})"
