@@ -26,10 +26,15 @@ from .const import (
 
 # Import the custom coordinator
 from .coordinator import InimDataUpdateCoordinator
+from .effective_entities import build_automatic_options
 
 # Import API
 from .inim_api import InimAlarmAPI
-from .panel_profiles import apply_panel_profile_api_patches, configure_api_for_panel
+from .panel_profiles import (
+    PANEL_MODEL_10100,
+    apply_panel_profile_api_patches,
+    configure_api_for_panel,
+)
 from .smartliving_10100 import apply_smartliving_10100_precheck_fix
 
 _LOGGER = logging.getLogger(__name__)
@@ -110,6 +115,40 @@ async def _refresh_initial_config_if_stale(
     _LOGGER.info("Stored Inim initial panel config refreshed for %s", entry.title)
 
 
+def _apply_automatic_10100_options(
+    hass: HomeAssistant, entry: ConfigEntry, panel_model: str
+) -> None:
+    """Derive effective import limits and scenario mappings for 10100 profiles."""
+    if panel_model != PANEL_MODEL_10100:
+        return
+
+    initial_panel_config = entry.data.get(DATA_INITIAL_PANEL_CONFIG, {})
+    if not _initial_config_is_usable(initial_panel_config):
+        _LOGGER.warning(
+            "Cannot derive automatic SmartLiving 10100 options for %s: initial config is incomplete",
+            entry.title,
+        )
+        return
+
+    updated_options, summary = build_automatic_options(
+        initial_panel_config, dict(entry.options)
+    )
+    if updated_options == dict(entry.options):
+        _LOGGER.debug(
+            "Automatic SmartLiving 10100 options already current for %s: %s",
+            entry.title,
+            summary,
+        )
+        return
+
+    hass.config_entries.async_update_entry(entry, options=updated_options)
+    _LOGGER.info(
+        "Applied automatic SmartLiving 10100 import options for %s: %s",
+        entry.title,
+        summary,
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Inim Alarm from a config entry."""
     _LOGGER.info(
@@ -136,6 +175,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Refresh static config before platforms are created if parser/profile offsets changed.
     await _refresh_initial_config_if_stale(hass, entry, api, panel_model)
+
+    # SmartLiving 10100/10100L imports are derived from the programmed names.
+    # This keeps existing entities stable while removing the need to set manual
+    # area/zone/scenario limits and common scenario mappings.
+    _apply_automatic_10100_options(hass, entry, panel_model)
 
     # Create the custom coordinator instance
     coordinator_name = f"{DOMAIN} data ({entry.title})"
