@@ -62,7 +62,7 @@ def test_duplicate_alias_is_not_inferred() -> None:
     assert CONF_SCENARIO_ARM_AWAY not in infer_scenario_mappings(names)
 
 
-def test_build_automatic_options_detects_limits_and_preserves_manual_mapping() -> None:
+def test_build_automatic_options_replaces_stale_limits_and_preserves_manual_mapping() -> None:
     initial_config = {
         "areas": {
             "names": [
@@ -97,6 +97,9 @@ def test_build_automatic_options_detects_limits_and_preserves_manual_mapping() -
         },
     }
     current_options = {
+        CONF_LIMIT_AREAS: 8,
+        CONF_LIMIT_ZONES: 34,
+        CONF_LIMIT_SCENARIOS: 12,
         CONF_SCENARIO_ARM_HOME: 2,
         CONF_SCENARIO_ARM_AWAY: None,
     }
