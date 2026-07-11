@@ -115,38 +115,53 @@ async def _refresh_initial_config_if_stale(
     _LOGGER.info("Stored Inim initial panel config refreshed for %s", entry.title)
 
 
-def _apply_automatic_10100_options(
-    hass: HomeAssistant, entry: ConfigEntry, panel_model: str
-) -> None:
-    """Derive effective import limits and scenario mappings for 10100 profiles."""
+def _apply_automatic_10100_runtime_options(
+    entry: ConfigEntry, panel_model: str
+) -> dict[str, Any] | None:
+    """Apply derived 10100 limits and mappings to the active config entry.
+
+    Derived values are runtime state, not user preferences. Updating the active
+    options mapping directly makes every platform see the effective values in
+    the same setup pass and avoids depending on config-entry storage timing.
+    Existing manual scenario mappings remain authoritative.
+    """
     if panel_model != PANEL_MODEL_10100:
-        return
+        return None
 
     initial_panel_config = entry.data.get(DATA_INITIAL_PANEL_CONFIG, {})
     if not _initial_config_is_usable(initial_panel_config):
         _LOGGER.warning(
-            "Cannot derive automatic SmartLiving 10100 options for %s: initial config is incomplete",
+            "Cannot derive automatic SmartLiving 10100 runtime options for %s: initial config is incomplete",
             entry.title,
         )
-        return
+        return None
 
-    updated_options, summary = build_automatic_options(
-        initial_panel_config, dict(entry.options)
+    current_options = dict(entry.options)
+    runtime_options, summary = build_automatic_options(
+        initial_panel_config, current_options
     )
-    if updated_options == dict(entry.options):
-        _LOGGER.debug(
-            "Automatic SmartLiving 10100 options already current for %s: %s",
+
+    # ConfigEntry.options is a mutable mapping in Home Assistant. Keep derived
+    # limits runtime-only: they are recalculated on every setup from panel data.
+    # This also makes stale saved limits harmless (for example a historical 34
+    # when the last programmed zone is currently Z032).
+    entry.options.clear()
+    entry.options.update(runtime_options)
+
+    if runtime_options != current_options:
+        _LOGGER.warning(
+            "Applied runtime SmartLiving 10100 import values for %s: %s",
             entry.title,
             summary,
         )
-        return
+    else:
+        _LOGGER.debug(
+            "Runtime SmartLiving 10100 import values already current for %s: %s",
+            entry.title,
+            summary,
+        )
 
-    hass.config_entries.async_update_entry(entry, options=updated_options)
-    _LOGGER.info(
-        "Applied automatic SmartLiving 10100 import options for %s: %s",
-        entry.title,
-        summary,
-    )
+    return summary
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -176,10 +191,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Refresh static config before platforms are created if parser/profile offsets changed.
     await _refresh_initial_config_if_stale(hass, entry, api, panel_model)
 
-    # SmartLiving 10100/10100L imports are derived from the programmed names.
-    # This keeps existing entities stable while removing the need to set manual
-    # area/zone/scenario limits and common scenario mappings.
-    _apply_automatic_10100_options(hass, entry, panel_model)
+    # SmartLiving 10100/10100L imports are derived from programmed names. Apply
+    # them to the active entry before platforms read entry.options. Saved legacy
+    # limits remain untouched and are ignored at runtime.
+    _apply_automatic_10100_runtime_options(entry, panel_model)
 
     # Create the custom coordinator instance
     coordinator_name = f"{DOMAIN} data ({entry.title})"
