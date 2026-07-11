@@ -1,6 +1,7 @@
 """The Inim Alarm integration."""
 
 import logging
+from types import MappingProxyType
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -120,9 +121,9 @@ def _apply_automatic_10100_runtime_options(
 ) -> dict[str, Any] | None:
     """Apply derived 10100 limits and mappings to the active config entry.
 
-    Derived values are runtime state, not user preferences. Updating the active
-    options mapping directly makes every platform see the effective values in
-    the same setup pass and avoids depending on config-entry storage timing.
+    Derived values are runtime state, not user preferences. Replacing the
+    active immutable options mapping makes every platform see the effective
+    values in the same setup pass without depending on storage timing.
     Existing manual scenario mappings remain authoritative.
     """
     if panel_model != PANEL_MODEL_10100:
@@ -141,12 +142,11 @@ def _apply_automatic_10100_runtime_options(
         initial_panel_config, current_options
     )
 
-    # ConfigEntry.options is a mutable mapping in Home Assistant. Keep derived
-    # limits runtime-only: they are recalculated on every setup from panel data.
-    # This also makes stale saved limits harmless (for example a historical 34
-    # when the last programmed zone is currently Z032).
-    entry.options.clear()
-    entry.options.update(runtime_options)
+    # Home Assistant exposes ConfigEntry.options as MappingProxyType and blocks
+    # normal assignment. Install a runtime-only mapping before platforms are
+    # forwarded. Saved legacy values are deliberately left untouched and are
+    # recalculated on every setup from the panel configuration.
+    object.__setattr__(entry, "options", MappingProxyType(runtime_options))
 
     if runtime_options != current_options:
         _LOGGER.warning(
