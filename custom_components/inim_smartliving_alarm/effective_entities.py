@@ -5,13 +5,23 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Iterable
+from typing import Any
 
 from .const import (
+    CONF_LIMIT_AREAS,
+    CONF_LIMIT_SCENARIOS,
+    CONF_LIMIT_ZONES,
     CONF_SCENARIO_ARM_AWAY,
     CONF_SCENARIO_ARM_HOME,
     CONF_SCENARIO_ARM_NIGHT,
     CONF_SCENARIO_ARM_VACATION,
     CONF_SCENARIO_DISARM,
+    KEY_INIT_AREA_NAMES,
+    KEY_INIT_AREAS,
+    KEY_INIT_SCENARIO_NAMES,
+    KEY_INIT_SCENARIOS,
+    KEY_INIT_ZONE_NAMES,
+    KEY_INIT_ZONES,
 )
 
 _PLACEHOLDER_PATTERNS = {
@@ -112,3 +122,62 @@ def infer_scenario_mappings(scenario_names: Iterable[str | None]) -> dict[str, i
         for mapping_key, indexes in matches.items()
         if len(indexes) == 1
     }
+
+
+def _last_effective_limit(names: Iterable[str | None], entity_kind: str) -> int | None:
+    """Return the smallest contiguous import limit covering all effective indexes."""
+    indexes = effective_indexes(names, entity_kind)
+    return indexes[-1] + 1 if indexes else None
+
+
+def build_automatic_options(
+    initial_panel_config: dict[str, Any], current_options: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build automatic limits and safe scenario mappings from panel data.
+
+    Import limits are recalculated from the last programmed slot. Existing
+    non-empty scenario mappings remain manual overrides; only missing/None
+    mappings are filled from unambiguous exact-name matches.
+    """
+    area_names = initial_panel_config.get(KEY_INIT_AREAS, {}).get(
+        KEY_INIT_AREA_NAMES, []
+    )
+    zone_names = initial_panel_config.get(KEY_INIT_ZONES, {}).get(
+        KEY_INIT_ZONE_NAMES, []
+    )
+    scenario_names = initial_panel_config.get(KEY_INIT_SCENARIOS, {}).get(
+        KEY_INIT_SCENARIO_NAMES, []
+    )
+
+    area_indexes = effective_indexes(area_names, "area")
+    zone_indexes = effective_indexes(zone_names, "zone")
+    scenario_indexes = effective_indexes(scenario_names, "scenario")
+
+    detected_limits = {
+        CONF_LIMIT_AREAS: _last_effective_limit(area_names, "area"),
+        CONF_LIMIT_ZONES: _last_effective_limit(zone_names, "zone"),
+        CONF_LIMIT_SCENARIOS: _last_effective_limit(scenario_names, "scenario"),
+    }
+
+    updated_options = dict(current_options)
+    for option_key, detected_value in detected_limits.items():
+        if detected_value is not None:
+            updated_options[option_key] = detected_value
+
+    inferred_mappings = infer_scenario_mappings(scenario_names)
+    applied_mappings: dict[str, int] = {}
+    for mapping_key, scenario_index in inferred_mappings.items():
+        if updated_options.get(mapping_key) is None:
+            updated_options[mapping_key] = scenario_index
+            applied_mappings[mapping_key] = scenario_index
+
+    summary = {
+        "effective_areas": len(area_indexes),
+        "effective_zones": len(zone_indexes),
+        "effective_scenarios": len(scenario_indexes),
+        "detected_limits": {
+            key: value for key, value in detected_limits.items() if value is not None
+        },
+        "applied_scenario_mappings": applied_mappings,
+    }
+    return updated_options, summary
