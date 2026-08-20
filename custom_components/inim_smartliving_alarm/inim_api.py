@@ -72,7 +72,7 @@ class InimAlarmConstants:
             "resp_len": 241,
         },
         "GET_ACTIVE_SCENARIO": {
-            "cmd_full": "0000001ffb7f019a",
+            "cmd_full": "0003001ffbff011d",
             "resp_len": 2,
         },
         "CHECK_SCENARIO_ACTIVATION_ALLOWED_INFO": {  # Dynamic command base
