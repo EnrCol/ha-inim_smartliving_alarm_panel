@@ -1116,7 +1116,7 @@ class InimAlarmAPI:
             return status_info
         return None
 
-def get_active_scenario(self):
+    def get_active_scenario(self):
         """Requests the currently active scenario using hardcoded masks based on max areas."""
         spec = InimAlarmConstants.COMMAND_SPECS["GET_ACTIVE_SCENARIO"]
         
