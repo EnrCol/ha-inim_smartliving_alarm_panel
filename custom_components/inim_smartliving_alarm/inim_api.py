@@ -1116,12 +1116,28 @@ class InimAlarmAPI:
             return status_info
         return None
 
-    def get_active_scenario(self):
-        """Requests the currently active scenario."""
+def get_active_scenario(self):
+        """Requests the currently active scenario using hardcoded masks based on max areas."""
         spec = InimAlarmConstants.COMMAND_SPECS["GET_ACTIVE_SCENARIO"]
+        
+        # Seleziona il comando con la maschera di bit esatta in base al limite hardware delle aree
+        if self.system_max_areas == 5:
+            # SmartLiving 505/515 (Maschera 5 bit: 0x001F)
+            target_cmd = "0000001ffb1f013a"
+        elif self.system_max_areas == 10:
+            # SmartLiving 1050 (Maschera 10 bit: 0x03FF)
+            target_cmd = "0003001ffbff011d"
+    #   elif self.system_max_areas == 15:
+            # SmartLiving 10100 (Maschera 15 bit: 0x7FFF) to be verified
+    #       target_cmd = "007f001ffbff0199"
+        else:
+            # Fallback di sicurezza alla stringa originale del dizionario
+            target_cmd = spec["cmd_full"]
+
         response_data_hex = self._send_command_core(
-            spec["cmd_full"], expect_specific_response_len=spec["resp_len"]
+            target_cmd, expect_specific_response_len=spec["resp_len"]
         )  # Response 2 bytes (1 data byte + 1 chk)
+        
         if response_data_hex:
             # First byte tells active scenario number (counting from 00).
             active_scenario_num = int(response_data_hex, 16)
