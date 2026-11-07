@@ -1,9 +1,5 @@
 {
   "name": "INIM SmartLiving Alarm (unofficial)",
-  "domains": [
-    "alarm_control_panel"
-  ],
-  "iot_class": "local_polling",
-  "homeassistant": "2023.6.0",
-  "country": "IT"
+  "country": "IT",
+  "homeassistant": "2023.6.0"
 }

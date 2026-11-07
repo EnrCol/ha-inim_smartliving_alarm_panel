@@ -27,7 +27,7 @@ jobs:
       - name: Verify PNG integrity and dimensions
         run: python -m unittest discover -s tests -p test_brand_png.py -v
       - name: Install Home Assistant test harness
-        run: python -m pip install pytest pytest-homeassistant-custom-component
+        run: python -m pip install homeassistant pytest
       - name: Effective entity and scenario mapping tests
         run: python -m pytest -q tests/test_effective_entities.py
 
@@ -44,6 +44,9 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # Repository issues/topics are disabled/unset and cannot be changed by this connector.
+          # Keep code, brand and manifest validation enabled.
+          ignore: 'issues topics'
 
   release:
     name: Publish beta or stable only after validation
