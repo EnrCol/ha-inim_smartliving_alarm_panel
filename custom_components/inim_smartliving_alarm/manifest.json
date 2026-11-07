@@ -1,14 +1,18 @@
 {
-    "domain": "inim_smartliving_alarm",
-    "name": "Inim Smartliving Alarm",
-    "codeowners": ["@EnrCol"],
-    "documentation": "https://github.com/EnrCol/ha-inim_smartliving_alarm_panel/blob/main/README.md",
-    "issue_tracker": "https://github.com/EnrCol/ha-inim_smartliving_alarm_panel/issues",
-    "requirements": [],
-    "iot_class": "local_polling",
-    "integration_type": "device",
-    "version": "0.3.3-test8",
-    "config_flow": true,
-    "dependencies": [],
-    "loggers": ["custom_components.inim_smartliving_alarm"]
-  }
+  "domain": "inim_smartliving_alarm",
+  "name": "Inim Smartliving Alarm",
+  "codeowners": [
+    "@EnrCol"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/EnrCol/ha-inim_smartliving_alarm_panel/blob/main/README.md",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/EnrCol/ha-inim_smartliving_alarm_panel/issues",
+  "loggers": [
+    "custom_components.inim_smartliving_alarm"
+  ],
+  "requirements": [],
+  "version": "0.3.4b1"
+}
