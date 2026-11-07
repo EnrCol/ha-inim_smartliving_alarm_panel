@@ -1982,34 +1982,32 @@ class InimAlarmAPI:
             status["errors"] = []
         return status
 
-    def _read_live_status(self) -> dict[str, Any]:
-        """Read areas, zones and active scenario on an already open connection.
+    def _read_live_status(self, full: bool = True) -> dict[str, Any]:
+        """Read live status on an already open connection.
+
+        ``full=False`` reads only what must be fresh every second: zones
+        (doors/windows), areas (armed/alarm) and the active scenario. The
+        exclusion and alarm-memory reads are skipped and left as None.
 
         No pause between commands: 60 back-to-back cycles at 1 s (330-380 ms
         each) ran without errors on a SmartLiving 10100.
         """
         live_status = self._empty_live_status()
+        reads = [
+            ("areas_status", self.get_areas_status, "areas status"),
+            ("zones_status", self.get_zones_status, "zones status"),
+        ]
+        if full:
+            reads += [
+                ("zones_excluded_status", self.get_zones_excluded_status, "zones excluded status"),
+                ("zones_triggered_status", self.get_zones_triggered_status, "zones triggered status"),
+            ]
+        reads.append(("active_scenario", self.get_active_scenario, "active scenario"))
         try:
-            live_status["areas_status"] = self.get_areas_status()
-            if live_status["areas_status"] is None:
-                live_status["errors"].append("Failed to get areas status.")
-
-            live_status["zones_status"] = self.get_zones_status()
-            if live_status["zones_status"] is None:
-                live_status["errors"].append("Failed to get zones status.")
-
-            live_status["zones_excluded_status"] = self.get_zones_excluded_status()
-            if live_status["zones_excluded_status"] is None:
-                live_status["errors"].append("Failed to get zones excluded status.")
-
-            live_status["zones_triggered_status"] = self.get_zones_triggered_status()
-            if live_status["zones_triggered_status"] is None:
-                live_status["errors"].append("Failed to get zones triggered status.")
-
-            live_status["active_scenario"] = self.get_active_scenario()
-            if live_status["active_scenario"] is None:
-                live_status["errors"].append("Failed to get active scenario.")
-
+            for key, reader, label in reads:
+                live_status[key] = reader()
+                if live_status[key] is None:
+                    live_status["errors"].append(f"Failed to get {label}.")
         except Exception as e:
             logger.error(f"Exception during live status read: {e}")
             live_status["errors"].append(f"Exception: {str(e)}")
@@ -2034,6 +2032,7 @@ class InimAlarmAPI:
         count: int | None = None,
         last_processed_compact_event_index_val: int | None = None,
         keep_alive: bool = False,
+        full: bool = True,
     ) -> dict[str, Any]:
         """Read live status and new compact events over ONE TCP connection.
 
@@ -2044,6 +2043,9 @@ class InimAlarmAPI:
         the panel drops it after 15-30 s idle, so callers must poll faster
         than that. Any error closes it, so a desynchronised stream never
         survives into the next cycle.
+
+        ``full=False`` is the light cycle: zones, areas and active scenario
+        only; no exclusions, alarm memory or events ("events_result" is None).
         """
         with self._api_lock:
             reused = self._is_connected
@@ -2054,7 +2056,7 @@ class InimAlarmAPI:
                 return result
             healthy = False
             try:
-                result = self._read_live_status()
+                result = self._read_live_status(full)
                 if result["errors"] and reused:
                     # The kept connection went stale: reopen once and retry.
                     logger.info("Kept panel connection failed, reconnecting")
@@ -2067,7 +2069,11 @@ class InimAlarmAPI:
                             "latest_event_index_val": None,
                         }
                         return result
-                    result = self._read_live_status()
+                    result = self._read_live_status(full)
+                if not full:
+                    result["events_result"] = None
+                    healthy = not result["errors"]
+                    return result
                 events_result: dict[str, Any] = {
                     "events": [],
                     "latest_event_index_val": None,

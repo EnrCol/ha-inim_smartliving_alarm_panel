@@ -204,3 +204,43 @@ def test_errors_close_kept_connection(monkeypatch):
     result = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
     assert result["errors"]
     assert not api._is_connected
+
+
+def test_light_cycle_reads_only_fast_status(monkeypatch):
+    """Light cycle: zones, areas, scenario only; no exclusions, memory or events."""
+    _count_sockets(monkeypatch)
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    _stub_status(monkeypatch, api)
+    called = []
+    for name in ("get_zones_excluded_status", "get_zones_triggered_status"):
+        monkeypatch.setattr(api, name, lambda n=name: called.append(n))
+    monkeypatch.setattr(api, "_send_command_core", lambda *a, **kw: called.append("events") or "0200")
+
+    result = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True, full=False)
+
+    assert called == []
+    assert result["errors"] == []
+    assert result["events_result"] is None
+    assert result["zones_status"] == {"zone_statuses": {}}
+    assert api._is_connected  # healthy light cycle keeps the connection
+
+
+def test_full_read_scheduling(monkeypatch):
+    from custom_components.inim_smartliving_alarm import coordinator as coord
+
+    c = coord.InimDataUpdateCoordinator.__new__(coord.InimDataUpdateCoordinator)
+    c._slow_interval = 5
+    c._force_full_read = False
+    now = [1000.0]
+    monkeypatch.setattr(coord.time, "monotonic", lambda: now[0])
+
+    c._last_full_read = None
+    assert c._full_read_due()  # first cycle is always full
+    c._last_full_read = 1000.0
+    now[0] = 1001.0
+    assert not c._full_read_due()
+    now[0] = 1004.6
+    assert c._full_read_due()  # 5 s slow interval with jitter margin
+    now[0] = 1001.0
+    c._force_full_read = True  # set by async_request_refresh after a command
+    assert c._full_read_due()

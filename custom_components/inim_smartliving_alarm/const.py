@@ -18,6 +18,7 @@ CONF_HOST = "host"
 CONF_PORT = "port"
 CONF_PIN = "pin"
 CONF_POLLING_INTERVAL = "polling_interval"
+CONF_SLOW_POLLING_INTERVAL = "slow_polling_interval"
 CONF_PANEL_NAME = "panel_name"
 CONF_PANEL_MODEL = "panel_model"
 CONF_REFRESH_INITIAL_CONFIG = "refresh_initial_panel_config"
@@ -39,6 +40,9 @@ CONF_SCENARIO_DISARM = "scenario_disarm"
 
 # Defaults
 DEFAULT_POLLING_INTERVAL = 2  # seconds
+# Exclusions, zone alarm memory and the event log change rarely: read them
+# less often to lighten the panel load.
+DEFAULT_SLOW_POLLING_INTERVAL = 10  # seconds
 DEFAULT_PORT = 5004  # Common default for SmartLAN/SI, user can override
 DEFAULT_PANEL_NAME = "Inim Smartliving"  # Default if user doesn't provide one
 DEFAULT_PANEL_MODEL = "smartliving_1050"

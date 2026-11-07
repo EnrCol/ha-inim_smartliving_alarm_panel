@@ -15,7 +15,8 @@
           "title": "Opzioni Iniziali",
           "description": "Imposta le opzioni iniziali. Potranno essere modificate in seguito dalla pagina di configurazione dell'integrazione.",
           "data": {
-            "polling_interval": "Intervallo di aggiornamento (secondi)",
+            "polling_interval": "Intervallo veloce: porte/finestre, aree, scenario (secondi)",
+            "slow_polling_interval": "Intervallo lento: esclusioni, memoria allarme zone, eventi (secondi)",
             "limit_areas": "Numero di Aree da importare",
             "limit_zones": "Numero di Zone da importare",
             "limit_scenarios": "Numero di Scenari da importare",
@@ -47,7 +48,8 @@
           "description": "Modifica le impostazioni per la tua integrazione Inim.",
           "data": {
             "pin": "Nuovo codice PIN (vuoto = mantieni quello attuale)",
-            "polling_interval": "Intervallo di aggiornamento (secondi)",
+            "polling_interval": "Intervallo veloce: porte/finestre, aree, scenario (secondi)",
+            "slow_polling_interval": "Intervallo lento: esclusioni, memoria allarme zone, eventi (secondi)",
             "limit_areas": "Numero di Aree da importare",
             "limit_zones": "Numero di Zone da importare",
             "limit_scenarios": "Numero di Scenari da importare",
