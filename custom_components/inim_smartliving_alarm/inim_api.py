@@ -347,7 +347,6 @@ class InimAlarmAPI:
             finally:
                 self.sock = None
                 self._is_connected = False
-        else:
 
     def _send_raw_command(self, command_hex_with_payload):
         """
