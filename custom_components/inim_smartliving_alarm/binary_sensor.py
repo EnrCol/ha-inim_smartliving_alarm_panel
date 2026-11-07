@@ -35,9 +35,12 @@ from .const import (
     KEY_INIT_ZONES,
     KEY_INIT_ZONES_CONFIG,
     KEY_INIT_ZONES_CONFIG_DETAILED,
+    KEY_LIVE_AREA_STATUSES_MAP,
+    KEY_LIVE_AREAS_STATUS,
     KEY_LIVE_ZONE_TRIGGERED_STATUSES_MAP,
     KEY_LIVE_ZONES_TRIGGERED_STATUS,
 )
+from .effective_entities import effective_indexes, resolve_any_area_armed
 from .panel_profiles import PANEL_MODEL_10100
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,7 +100,12 @@ async def async_setup_entry(
         else []
     )
 
-    binary_sensors_to_add = []
+    binary_sensors_to_add = [
+        InimAnyAreaArmedBinarySensor(
+            coordinator, entry, panel_display_name, system_info,
+            all_area_names, limit_areas,
+        )
+    ]
 
     num_zones_to_consider = min(len(all_zone_names), limit_zones)
     if panel_model == PANEL_MODEL_10100:
@@ -164,17 +172,15 @@ async def async_setup_entry(
             )
         )
 
-    num_scenarios_to_create = min(len(all_scenario_names), limit_scenarios)
+    programmed_indexes = effective_indexes(all_scenario_names, "scenario", limit_scenarios)
     _LOGGER.debug(
         "Setting up %s Scenario Active Binary Sensors (Limit: %s, Available: %s)",
-        num_scenarios_to_create,
+        len(programmed_indexes),
         limit_scenarios,
         len(all_scenario_names),
     )
-    for i in range(num_scenarios_to_create):
-        scenario_name = (
-            all_scenario_names[i] if all_scenario_names[i] else f"Scenario {i + 1}"
-        )
+    for i in programmed_indexes:
+        scenario_name = all_scenario_names[i].strip()
         binary_sensors_to_add.append(
             InimSpecificScenarioActiveBinarySensor(
                 coordinator, entry, panel_display_name, system_info, i, scenario_name
@@ -217,6 +223,55 @@ class BaseInimBinarySensor(CoordinatorEntity, BinarySensorEntity):
             manufacturer="Inim Electronics",
             model=self._system_info.get("type", "SmartLiving"),
             sw_version=self._system_info.get("version", "Unknown"),
+        )
+
+
+class InimAnyAreaArmedBinarySensor(BaseInimBinarySensor):
+    """True when at least one programmed area is physically armed.
+
+    This independent read-only sensor avoids treating an unknown HA scenario
+    mapping as a disarmed panel. Unknown status is not reported as off.
+    """
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        panel_display_name: str,
+        system_info: dict[str, Any],
+        area_names: list[str],
+        limit_areas: int,
+    ) -> None:
+        super().__init__(coordinator, config_entry, panel_display_name, system_info)
+        self._area_names = area_names
+        self._limit_areas = limit_areas
+        self._attr_name = "Any Area Armed"
+        self._attr_unique_id = f"{config_entry.entry_id}_any_area_armed"
+        self._update_state_from_coordinator()
+
+    @property
+    def suggested_object_id(self) -> str | None:
+        return f"{self._panel_display_name}_any_area_armed"
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_state_from_coordinator()
+        self.async_write_ha_state()
+
+    def _update_state_from_coordinator(self) -> None:
+        data = self.coordinator.data or {}
+        area_data = data.get(KEY_LIVE_AREAS_STATUS) or {}
+        self._attr_is_on = resolve_any_area_armed(
+            area_data.get(KEY_LIVE_AREA_STATUSES_MAP),
+            self._area_names,
+            self._limit_areas,
+        )
+        self._attr_icon = (
+            "mdi:shield-check"
+            if self._attr_is_on is True
+            else "mdi:shield-off-outline"
+            if self._attr_is_on is False
+            else "mdi:shield-question"
         )
 
 
