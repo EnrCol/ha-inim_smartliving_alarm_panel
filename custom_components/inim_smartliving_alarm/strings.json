@@ -46,7 +46,7 @@
           "title": "Inim SmartLiving Alarm Options",
           "description": "Adjust the settings for your Inim Alarm integration.",
           "data": {
-            "pin": "New PIN Code",
+            "pin": "New PIN Code (leave empty to keep the current one)",
             "polling_interval": "Polling Interval (seconds)",
             "limit_areas": "Number of Areas to import",
             "limit_zones": "Number of Zones to import",

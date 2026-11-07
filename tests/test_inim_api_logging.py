@@ -106,3 +106,101 @@ def test_connection_error_remains_visible(monkeypatch, caplog):
         r.levelno >= logging.ERROR and "Connection failed" in r.getMessage()
         for r in caplog.records
     )
+
+
+def test_poll_cycle_uses_one_connection(monkeypatch, caplog):
+    """Status and events must share a single TCP connection per cycle."""
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    calls = {"connect": 0, "disconnect": 0}
+
+    def fake_connect():
+        calls["connect"] += 1
+        return True
+
+    monkeypatch.setattr(api, "connect", fake_connect)
+    monkeypatch.setattr(api, "disconnect", lambda: calls.__setitem__("disconnect", calls["disconnect"] + 1))
+    monkeypatch.setattr(inim_api.time, "sleep", lambda _: None)
+    monkeypatch.setattr(api, "get_areas_status", lambda: {"area_statuses": {}})
+    monkeypatch.setattr(api, "get_zones_status", lambda: {"zone_statuses": {}})
+    monkeypatch.setattr(api, "get_zones_excluded_status", lambda: {"zone_excluded_statuses": {}})
+    monkeypatch.setattr(api, "get_zones_triggered_status", lambda: {"zone_triggered_statuses": {}})
+    monkeypatch.setattr(api, "get_active_scenario", lambda: {"active_scenario_number": 0})
+    monkeypatch.setattr(api, "_send_command_core", lambda *a, **kw: "0200")
+
+    with caplog.at_level(logging.DEBUG, logger=inim_api.logger.name):
+        result = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D)
+
+    assert calls == {"connect": 1, "disconnect": 1}
+    assert result["errors"] == []
+    assert result["events_result"] == {"events": [], "latest_event_index_val": 0x920D}
+    assert not [r for r in caplog.records if r.name == inim_api.logger.name]
+
+
+def test_poll_cycle_connection_failure(monkeypatch):
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    monkeypatch.setattr(api, "connect", lambda: False)
+    result = api.execute_poll_cycle(count=5)
+    assert result["error"] == "Connection failure"
+    assert result["events_result"]["events"] == []
+
+
+def _stub_status(monkeypatch, api, fail_first=0):
+    state = {"fails": fail_first}
+
+    def areas():
+        if state["fails"]:
+            state["fails"] -= 1
+            return None
+        return {"area_statuses": {}}
+
+    monkeypatch.setattr(inim_api.time, "sleep", lambda _: None)
+    monkeypatch.setattr(api, "get_areas_status", areas)
+    monkeypatch.setattr(api, "get_zones_status", lambda: {"zone_statuses": {}})
+    monkeypatch.setattr(api, "get_zones_excluded_status", lambda: {"zone_excluded_statuses": {}})
+    monkeypatch.setattr(api, "get_zones_triggered_status", lambda: {"zone_triggered_statuses": {}})
+    monkeypatch.setattr(api, "get_active_scenario", lambda: {"active_scenario_number": 0})
+    monkeypatch.setattr(api, "_send_command_core", lambda *a, **kw: "0200")
+
+
+def _count_sockets(monkeypatch):
+    opened = []
+
+    def factory(*a, **kw):
+        opened.append(FakeSocket())
+        return opened[-1]
+
+    monkeypatch.setattr(inim_api.socket, "socket", factory)
+    return opened
+
+
+def test_keep_alive_reuses_connection(monkeypatch):
+    opened = _count_sockets(monkeypatch)
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    _stub_status(monkeypatch, api)
+    for _ in range(3):
+        result = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+        assert result["errors"] == []
+    assert len(opened) == 1
+    assert api._is_connected
+    api.close()
+    assert not api._is_connected
+
+
+def test_keep_alive_reconnects_once_on_stale_connection(monkeypatch):
+    opened = _count_sockets(monkeypatch)
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    _stub_status(monkeypatch, api)
+    api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+    _stub_status(monkeypatch, api, fail_first=1)  # kept socket now broken
+    result = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+    assert result["errors"] == []
+    assert len(opened) == 2
+
+
+def test_errors_close_kept_connection(monkeypatch):
+    _count_sockets(monkeypatch)
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    _stub_status(monkeypatch, api, fail_first=1)  # fresh connection, no retry
+    result = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+    assert result["errors"]
+    assert not api._is_connected

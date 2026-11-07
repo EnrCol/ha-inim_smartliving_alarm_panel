@@ -46,7 +46,7 @@
           "title": "Opzioni Inim SmartLiving",
           "description": "Modifica le impostazioni per la tua integrazione Inim.",
           "data": {
-            "pin": "Codice PIN",
+            "pin": "Nuovo codice PIN (vuoto = mantieni quello attuale)",
             "polling_interval": "Intervallo di aggiornamento (secondi)",
             "limit_areas": "Numero di Aree da importare",
             "limit_zones": "Numero di Zone da importare",

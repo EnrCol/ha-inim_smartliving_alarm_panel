@@ -340,7 +340,7 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(
                 CONF_POLLING_INTERVAL,
                 default=step1_data.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL),
-            ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
             vol.Optional(
                 CONF_LIMIT_AREAS,
                 default=step1_data.get(
@@ -537,9 +537,9 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         options_schema_dict = {
-            vol.Optional(
-                CONF_PIN, description={"suggested_value": self.current_pin}
-            ): str,
+            # Never echo the stored PIN back to the UI/API: an empty field
+            # keeps the current PIN (see async_step_init).
+            vol.Optional(CONF_PIN): str,
             vol.Optional(
                 CONF_PANEL_MODEL,
                 default=self.current_panel_model,
@@ -551,7 +551,7 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_POLLING_INTERVAL,
                 default=self.current_settings.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL),
-            ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
             vol.Optional(
                 CONF_LIMIT_AREAS,
                 default=_schema_limit_default(
