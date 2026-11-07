@@ -187,3 +187,64 @@ def test_scenario_selector_preserves_real_indexes_but_omits_placeholders() -> No
         "2": "2: SOLO SEMINT.",
         "4": "4: NOTTE",
     }
+
+
+# --- Active-scenario read: area bitmask (PR #12 by scorbacella) ---
+from types import SimpleNamespace  # noqa: E402
+
+import pytest  # noqa: E402
+
+from custom_components.inim_smartliving_alarm import _configure_active_scenario_mask  # noqa: E402
+from custom_components.inim_smartliving_alarm.inim_api import InimAlarmAPI  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("areas", "command"),
+    [
+        (7, "0000001ffb7f019a"),  # historical fixed command
+        (5, "0000001ffb1f013a"),  # official app on SmartLiving 515
+        (10, "0003001ffbff011d"),  # official app on SmartLiving 1050
+        (15, "007f001ffbff0199"),  # verified on SmartLiving 10100
+        (1, "0000001ffb01011c"),  # verified on 10100: area 1 only
+    ],
+)
+def test_command_mask_and_checksum(areas, command):
+    assert InimAlarmAPI.build_active_scenario_command(areas) == command
+
+
+def test_legacy_command_when_not_configured(monkeypatch):
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    sent = []
+    monkeypatch.setattr(api, "_send_command_core", lambda cmd, **kw: sent.append(cmd) or "02")
+    assert api.get_active_scenario()["active_scenario_number"] == 2
+    assert sent == ["0000001ffb7f019a"]
+
+
+def test_configured_mask_is_sent(monkeypatch):
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    api.active_scenario_area_count = 15
+    sent = []
+    monkeypatch.setattr(api, "_send_command_core", lambda cmd, **kw: sent.append(cmd) or "00")
+    api.get_active_scenario()
+    assert sent == ["007f001ffbff0199"]
+
+
+@pytest.mark.parametrize(
+    ("limit_areas", "max_areas", "expected"),
+    [
+        (5, 15, 7),  # reference 10100 with 5 areas: unchanged (0x007F)
+        (5, 10, 7),  # 515 under the 1050 profile: unchanged
+        (3, 10, 7),  # low import limit never hides legacy areas
+        (10, 10, 10),  # 1050 with 10 areas: like the official app
+        (15, 15, 15),  # 10100 with 15 areas
+        (12, 10, 10),  # never beyond the panel profile
+        (None, 15, 10),  # missing option: integration default (10)
+        ("x", 15, 7),  # invalid value: legacy
+    ],
+)
+def test_area_count_rule(limit_areas, max_areas, expected):
+    api = SimpleNamespace(system_max_areas=max_areas, active_scenario_area_count=None)
+    options = {} if limit_areas is None else {"limit_areas": limit_areas}
+    entry = SimpleNamespace(options=options, data={})
+    _configure_active_scenario_mask(api, entry)
+    assert api.active_scenario_area_count == expected

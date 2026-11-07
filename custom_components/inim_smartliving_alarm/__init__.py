@@ -10,6 +10,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_HOST,
+    CONF_LIMIT_AREAS,
     CONF_PANEL_MODEL,
     CONF_PIN,
     CONF_POLLING_INTERVAL,
@@ -18,6 +19,7 @@ from .const import (
     DATA_COORDINATOR,
     DATA_INITIAL_PANEL_CONFIG,
     DATA_INITIAL_PANEL_CONFIG_REVISION,
+    DEFAULT_LIMIT_AREAS,
     DEFAULT_PANEL_MODEL,
     DEFAULT_POLLING_INTERVAL,
     DOMAIN,
@@ -116,6 +118,32 @@ async def _refresh_initial_config_if_stale(
     _LOGGER.info("Stored Inim initial panel config refreshed for %s", entry.title)
 
 
+LEGACY_ACTIVE_SCENARIO_AREAS = 7  # historical fixed mask 0x007F
+
+
+def _configure_active_scenario_mask(api: InimAlarmAPI, entry: ConfigEntry) -> None:
+    """Evaluate at least the 7 legacy areas, more when more are configured.
+
+    Never fewer than today (a low import limit must not hide areas used by
+    scenarios), never more than the panel profile supports.
+    """
+    limit_areas = entry.options.get(
+        CONF_LIMIT_AREAS, entry.data.get(CONF_LIMIT_AREAS, DEFAULT_LIMIT_AREAS)
+    )
+    try:
+        limit_areas = int(limit_areas)
+    except (TypeError, ValueError):
+        limit_areas = LEGACY_ACTIVE_SCENARIO_AREAS
+    api.active_scenario_area_count = min(
+        int(api.system_max_areas), max(limit_areas, LEGACY_ACTIVE_SCENARIO_AREAS)
+    )
+    _LOGGER.debug(
+        "Active scenario read evaluates areas 1-%s for %s",
+        api.active_scenario_area_count,
+        getattr(entry, "title", "entry"),
+    )
+
+
 def _apply_automatic_10100_runtime_options(
     entry: ConfigEntry, panel_model: str
 ) -> dict[str, Any] | None:
@@ -195,6 +223,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # them to the active entry before platforms read entry.options. Saved legacy
     # limits remain untouched and are ignored at runtime.
     _apply_automatic_10100_runtime_options(entry, panel_model)
+    _configure_active_scenario_mask(api, entry)
 
     # Create the custom coordinator instance
     coordinator_name = f"{DOMAIN} data ({entry.title})"

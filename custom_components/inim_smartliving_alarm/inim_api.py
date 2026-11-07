@@ -255,6 +255,9 @@ class InimAlarmAPI:
         self.sock = None
         self._is_connected = False
         self._api_lock = threading.Lock()  # Initialize the lock for this instance
+        # Areas evaluated by the active-scenario read; None keeps the legacy
+        # fixed command (mask 0x007F, areas 1-7).
+        self.active_scenario_area_count: int | None = None
 
         # Use provided system_max_areas or default from constants
         self.system_max_areas = (
@@ -1112,11 +1115,33 @@ class InimAlarmAPI:
             return status_info
         return None
 
+    @staticmethod
+    def build_active_scenario_command(area_count: int) -> str:
+        """Build the active-scenario read for areas 1..area_count.
+
+        Bytes 1 (high) and 5 (low) are a bitmask of the areas the panel
+        compares against the scenarios (found by scorbacella in PR #12 from
+        captures of the official app: 515 -> 0x001F, 1050 -> 0x03FF). With
+        the historical fixed mask 0x007F, panels with more than 7 areas could
+        report the wrong scenario. Verified on a SmartLiving 10100: mask
+        0x0001 returns a different scenario than 0x007F, 0x7FFF works.
+        """
+        area_count = max(1, min(int(area_count), 16))
+        mask = (1 << area_count) - 1
+        frame = [0x00, (mask >> 8) & 0xFF, 0x00, 0x1F, 0xFB, mask & 0xFF, 0x01]
+        return bytes(frame).hex() + format(sum(frame) & 0xFF, "02x")
+
     def get_active_scenario(self):
         """Requests the currently active scenario."""
         spec = InimAlarmConstants.COMMAND_SPECS["GET_ACTIVE_SCENARIO"]
+        area_count = getattr(self, "active_scenario_area_count", None)
+        command = (
+            self.build_active_scenario_command(area_count)
+            if area_count
+            else spec["cmd_full"]
+        )
         response_data_hex = self._send_command_core(
-            spec["cmd_full"], expect_specific_response_len=spec["resp_len"]
+            command, expect_specific_response_len=spec["resp_len"]
         )  # Response 2 bytes (1 data byte + 1 chk)
         if response_data_hex:
             # First byte tells active scenario number (counting from 00).
