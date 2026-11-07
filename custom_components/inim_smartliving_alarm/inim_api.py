@@ -1376,11 +1376,6 @@ class InimAlarmAPI:
         byte1_hex = response_data_hex[0:2]
         byte2_hex = response_data_hex[2:4]
         extended_event_pointer_hex_val_str = byte2_hex + byte1_hex
-        logger.debug(
-            "Raw next event pointer response data: %s, Extracted Hex Value: %s",
-            response_data_hex,
-            extended_event_pointer_hex_val_str,
-        )
         return extended_event_pointer_hex_val_str
 
     def _decode_area_mask(self, d1: str, d2: str) -> dict[str, Any] | None:
@@ -1524,10 +1519,6 @@ class InimAlarmAPI:
             y_current_most_recent_compact_val = (
                 (x_val_extended_most_recent * 9) + 0x9204
             ) & 0xFFFF
-            logger.debug(
-                "Panel's current most recent compact event index (Y_val): 0x%04x",
-                y_current_most_recent_compact_val,
-            )
         except ValueError:
             logger.error(
                 "Error converting extended event pointer to int. Cannot determine current event head."
@@ -1556,11 +1547,6 @@ class InimAlarmAPI:
                 y_current_most_recent_compact_val
                 <= last_processed_compact_event_index_val
             ):
-                logger.debug(
-                    "No new compact events. Current head (0x%04x) not newer than last processed (0x%04x).",
-                    y_current_most_recent_compact_val,
-                    last_processed_compact_event_index_val,
-                )
                 return {
                     "events": [],
                     "latest_event_index_val": y_current_most_recent_compact_val,
@@ -1592,23 +1578,11 @@ class InimAlarmAPI:
 
             if count is None and last_processed_compact_event_index_val is not None:
                 if current_loop_index_val <= last_processed_compact_event_index_val:
-                    logger.debug(
-                        "Incremental fetch: Reached or passed last known event index (current_loop: 0x%04x, last_processed: 0x%04x). Stopping.",
-                        current_loop_index_val,
-                        last_processed_compact_event_index_val,
-                    )
                     break
 
             index_b4_hex = format((current_loop_index_val >> 8) & 0xFF, "02x")
             index_b5_hex = format(current_loop_index_val & 0xFF, "02x")
 
-            logger.debug(
-                "Fetching compact event with index bytes: %s %s (Iteration %s, Full Index Val: 0x%04x)",
-                index_b4_hex,
-                index_b5_hex,
-                i,
-                current_loop_index_val,
-            )
             event = self._fetch_one_compact_event(index_b4_hex, index_b5_hex)
 
             if event:
