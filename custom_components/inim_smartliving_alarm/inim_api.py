@@ -10,6 +10,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Routine successful polling and raw TCP HEX frames must not flood the
+# Home Assistant log. Connection errors and actionable event changes remain
+# logged; transport payloads (which may contain a PIN) are not logged.
+
 
 class InimAlarmConstants:
     """Stores constants related to the Inim alarm protocol."""
@@ -320,14 +324,12 @@ class InimAlarmAPI:
     def connect(self):
         """Establishes a TCP connection to the alarm system."""
         if self._is_connected:
-            logger.info("Already connected.")
             return True
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.settimeout(InimAlarmConstants.DEFAULT_TIMEOUT)
             self.sock.connect((self.host, self.port))
             self._is_connected = True
-            logger.info(f"Connected to {self.host}:{self.port}")
             return True
         except socket.error as e:
             logger.error(f"Connection failed: {e}")
@@ -340,14 +342,12 @@ class InimAlarmAPI:
         if self.sock:
             try:
                 self.sock.close()
-                logger.info("Disconnected.")
             except socket.error as e:
                 logger.error(f"Error during disconnect: {e}")
             finally:
                 self.sock = None
                 self._is_connected = False
         else:
-            logger.info("Not connected, no need to disconnect.")
 
     def _send_raw_command(self, command_hex_with_payload):
         """
@@ -362,8 +362,6 @@ class InimAlarmAPI:
             binary_cmd = binascii.unhexlify(
                 command_hex_with_payload
             )  # Convert hex to binary
-            logger.debug(f"Sending HEX: {command_hex_with_payload}")
-            # logger.debug(f"Sending BIN: {binary_cmd}") # Optional: for very low-level debug
             self.sock.sendall(binary_cmd)
             return True
         except socket.timeout:
@@ -394,7 +392,6 @@ class InimAlarmAPI:
             response_hex = binascii.hexlify(
                 raw_response
             ).decode()  # Convert binary to hex
-            logger.debug(f"Received HEX: {response_hex}")
             return response_hex
         except socket.timeout:
             logger.error("Socket timeout during read.")
@@ -1528,7 +1525,7 @@ class InimAlarmAPI:
             y_current_most_recent_compact_val = (
                 (x_val_extended_most_recent * 9) + 0x9204
             ) & 0xFFFF
-            logger.info(
+            logger.debug(
                 "Panel's current most recent compact event index (Y_val): 0x%04x",
                 y_current_most_recent_compact_val,
             )
@@ -1560,7 +1557,7 @@ class InimAlarmAPI:
                 y_current_most_recent_compact_val
                 <= last_processed_compact_event_index_val
             ):
-                logger.info(
+                logger.debug(
                     "No new compact events. Current head (0x%04x) not newer than last processed (0x%04x).",
                     y_current_most_recent_compact_val,
                     last_processed_compact_event_index_val,
@@ -1638,7 +1635,8 @@ class InimAlarmAPI:
             if i < actual_count_to_iterate - 1:
                 time.sleep(0.05)
 
-        logger.info("Retrieved %s compact events in this batch.", len(events_retrieved))
+        if events_retrieved:
+            logger.info("Retrieved %s compact events in this batch.", len(events_retrieved))
         return {
             "events": events_retrieved,
             "latest_event_index_val": y_current_most_recent_compact_val,
@@ -2003,8 +2001,6 @@ class InimAlarmAPI:
         """
 
         with self._api_lock:  # Acquire the lock for the duration of this operation
-            logger.debug("Lock acquired for get_live_status_snapshot")
-
             if not self.connect():
                 logger.error("Failed to connect to panel for live status snapshot.")
                 return {
@@ -2026,25 +2022,21 @@ class InimAlarmAPI:
             }
 
             try:
-                logger.debug("Fetching live areas status...")
                 live_status["areas_status"] = self.get_areas_status()
                 if live_status["areas_status"] is None:
                     live_status["errors"].append("Failed to get areas status.")
                 time.sleep(0.1)  # Consistent small delay
 
-                logger.debug("Fetching live zones status...")
                 live_status["zones_status"] = self.get_zones_status()
                 if live_status["zones_status"] is None:
                     live_status["errors"].append("Failed to get zones status.")
                 time.sleep(0.1)
 
-                logger.debug("Fetching live zones excluded status...")
                 live_status["zones_excluded_status"] = self.get_zones_excluded_status()
                 if live_status["zones_excluded_status"] is None:
                     live_status["errors"].append("Failed to get zones excluded status.")
                 time.sleep(0.1)
 
-                logger.debug("Fetching live zones triggered status...")
                 live_status["zones_triggered_status"] = (
                     self.get_zones_triggered_status()
                 )
@@ -2054,7 +2046,6 @@ class InimAlarmAPI:
                     )
                 time.sleep(0.1)
 
-                logger.debug("Fetching live active scenario...")
                 live_status["active_scenario"] = self.get_active_scenario()
                 if live_status["active_scenario"] is None:
                     live_status["errors"].append("Failed to get active scenario.")
@@ -2250,7 +2241,6 @@ class InimAlarmAPI:
         then disconnects. Public wrapper.
         """
         with self._api_lock:
-            logger.debug("Lock acquired for execute_get_compact_events")
             if not self.connect():
                 logger.error("Failed to connect to panel for fetching compact events.")
                 return {"events": [], "latest_event_index_val": None}
