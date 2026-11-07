@@ -4,6 +4,16 @@ Home Assistant Integration for Inim SmartLiving Alarm Systems
 > [!WARNING]
 > This is an experimental custom component. It is not affiliated with Inim Electronics and it is not an official Inim integration. Use it at your own risk.
 
+![INIM integration brand](custom_components/inim_smartliving_alarm/brand/logo.png)
+
+[![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=EnrCol&repository=ha-inim_smartliving_alarm_panel&category=integration)
+
+**Beta v0.3.4b1.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
+
+**Validation scope:** field tests and protocol verification are available only on SmartLiving **10100** (firmware 6.09); 505/515 and 1050/1050L must not be described as hardware-validated. The automatic 10100 entity-import changes in this beta are pending a new real-installation soak test. Never treat a beta as a replacement for the official security system.
+
+**Marketplace updates:** add this repository as a custom Integration repository and enable **beta/prerelease versions** for it to receive `v0.3.4b1`. Stable updates remain separate. Release notes: [v0.3.4b1](RELEASE_NOTES_0.3.4b1.md).
+
 This custom integration connects Home Assistant to Inim SmartLiving alarm panels equipped with a SmartLAN/SI network interface. It allows local monitoring and control of the alarm system from Home Assistant.
 
 Features

@@ -1,80 +1,78 @@
-name: Release
+name: Verify and publish INIM integration
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to release. Must match manifest.json, for example 0.3.3-test2"
-        required: true
-        default: "0.3.3-test2"
-      prerelease:
-        description: "Mark this GitHub release as a pre-release"
-        required: true
-        type: boolean
-        default: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Create GitHub release
+  python:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Verify manifest version
-        env:
-          VERSION: ${{ inputs.version }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Python and JSON syntax
         run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
+          python -m compileall -q custom_components/inim_smartliving_alarm tests
+          python -m json.tool custom_components/inim_smartliving_alarm/manifest.json >/dev/null
+          python -m json.tool hacs.json >/dev/null
+          python -m json.tool custom_components/inim_smartliving_alarm/strings.json >/dev/null
+          python -m json.tool custom_components/inim_smartliving_alarm/translations/it.json >/dev/null
+      - name: Verify PNG integrity and dimensions
+        run: python -m unittest discover -s tests -p test_brand_png.py -v
+      - name: Install Home Assistant test harness
+        run: python -m pip install pytest pytest-homeassistant-custom-component
+      - name: Effective entity and scenario mapping tests
+        run: python -m pytest -q tests/test_effective_entities.py
 
-          expected = os.environ["VERSION"]
-          manifest_path = Path("custom_components/inim_smartliving_alarm/manifest.json")
-          manifest = json.loads(manifest_path.read_text())
-          actual = manifest.get("version")
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
 
-          if actual != expected:
-              raise SystemExit(
-                  f"manifest.json version mismatch: expected {expected}, found {actual}"
-              )
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
 
-          print(f"manifest.json version OK: {actual}")
-          PY
-
-      - name: Build integration zip
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          TAG="v${VERSION}"
-          ZIP_NAME="inim_smartliving_alarm-${TAG}.zip"
-
-          cd custom_components
-          zip -r "../${ZIP_NAME}" inim_smartliving_alarm
-          cd ..
-
-          echo "TAG=${TAG}" >> "$GITHUB_ENV"
-          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
-
-      - name: Create GitHub release
+  release:
+    name: Publish beta or stable only after validation
+    needs: [python, hassfest, hacs]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish immutable version from manifest
         env:
           GH_TOKEN: ${{ github.token }}
-          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
-
-          RELEASE_ARGS=()
-          if [ "${PRERELEASE}" = "true" ]; then
-            RELEASE_ARGS+=(--prerelease)
+          VERSION=$(python -c 'import json; print(json.load(open("custom_components/inim_smartliving_alarm/manifest.json"))["version"])')
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?$'; then
+            echo "::error::Invalid release version $VERSION"; exit 1
           fi
-
-          gh release create "${TAG}" "${ZIP_NAME}" \
-            --title "${TAG}" \
-            --notes "Home Assistant custom integration release ${TAG}." \
-            "${RELEASE_ARGS[@]}"
+          TAG="v${VERSION}"
+          NOTES="RELEASE_NOTES_${VERSION}.md"
+          if [ ! -s "$NOTES" ]; then
+            echo "::error::Missing release notes: $NOTES"; exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Version $TAG already published; no overwrite"
+            exit 0
+          fi
+          RELEASE_ARGS=()
+          if [[ "$VERSION" == *b* ]]; then RELEASE_ARGS+=(--prerelease); fi
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "INIM SmartLiving Alarm $TAG" --notes-file "$NOTES" "${RELEASE_ARGS[@]}"
