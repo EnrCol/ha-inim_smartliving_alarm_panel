@@ -34,6 +34,7 @@ from .const import (
     KEY_LIVE_TRIGGERED_AREAS_LIST,
     SERVICE_ALARM_RESET,
 )
+from .effective_entities import resolve_ha_alarm_state
 from .inim_api import InimAlarmAPI
 from .utils import async_handle_scenario_activation_failure
 
@@ -172,9 +173,8 @@ class InimAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
         self._attr_supported_features = supported_features
 
         # This internal attribute will hold the current state enum
-        self._current_ha_state_enum: AlarmControlPanelState | None = (
-            AlarmControlPanelState.DISARMED  # Default to DISARMED initially
-        )
+        # No optimistic DISARMED state before the panel returns valid data.
+        self._current_ha_state_enum: AlarmControlPanelState | None = None
         self._update_internal_state()  # Initial state update
 
         _LOGGER.debug(
@@ -211,146 +211,36 @@ class InimAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
         self.async_write_ha_state()  # Update HA state, which will use the new alarm_state property
 
     def _update_internal_state(self) -> None:
-        """Update the internal HA state based on coordinator data, using AlarmControlPanelState enum."""
-        if self.coordinator.data is None:
-            _LOGGER.warning(
-                "Coordinator data is None for %s, cannot update state. Previous state: %s",
-                self.name,
-                self._current_ha_state_enum,
-            )
-            # Optionally set to UNKNOWN or keep previous state.
-            # self._current_ha_state_enum = AlarmControlPanelState.UNKNOWN # Or None
-            return
+        """Translate the real INIM scenario without guessing an HA arm mode.
 
-        active_scenario_data = self.coordinator.data.get(KEY_LIVE_ACTIVE_SCENARIO)
-        areas_status_data = self.coordinator.data.get(KEY_LIVE_AREAS_STATUS)
+        A configured-but-unmapped scenario is represented as unknown in the
+        HA alarm panel. The dedicated scenario sensor still reports its exact
+        INIM name and index, and the area-armed sensor reports the physical
+        armed state independently.
+        """
+        data = self.coordinator.data or {}
+        scenario_data = data.get(KEY_LIVE_ACTIVE_SCENARIO) or {}
+        scenario_index = scenario_data.get(KEY_LIVE_ACTIVE_SCENARIO_NUMBER)
+        area_data = data.get(KEY_LIVE_AREAS_STATUS) or {}
+        triggered_areas = area_data.get(KEY_LIVE_TRIGGERED_AREAS_LIST) or []
 
-        current_active_scenario_idx = -1  # Default to unknown
-        if (
-            active_scenario_data
-            and active_scenario_data.get(KEY_LIVE_ACTIVE_SCENARIO_NUMBER) is not None
-        ):
-            current_active_scenario_idx = active_scenario_data.get(
-                KEY_LIVE_ACTIVE_SCENARIO_NUMBER
-            )
-
-        _LOGGER.debug(
-            "%s: Current active Inim scenario index: %s",
-            self.name,
-            current_active_scenario_idx,
+        resolved = resolve_ha_alarm_state(
+            scenario_index, self._scenario_mappings, triggered_areas
         )
+        new_state = AlarmControlPanelState(resolved) if resolved else None
 
-        new_state_enum: (
-            AlarmControlPanelState | None
-        )  # Explicitly allow None if state is truly unknown
-
-        # Default to DISARMED if no other conditions are met and a disarm scenario is defined.
-        # If no disarm scenario, it's harder to default.
-        if self._scenario_mappings.get(CONF_SCENARIO_DISARM) is not None:
-            new_state_enum = AlarmControlPanelState.DISARMED
-
-        # Check for TRIGGERED state first (highest priority)
-        if areas_status_data and areas_status_data.get(KEY_LIVE_TRIGGERED_AREAS_LIST):
-            if any(areas_status_data[KEY_LIVE_TRIGGERED_AREAS_LIST]):
-                _LOGGER.info(
-                    "%s: Panel is TRIGGERED. Triggered areas: %s",
-                    self.name,
-                    areas_status_data[KEY_LIVE_TRIGGERED_AREAS_LIST],
-                )
-                new_state_enum = AlarmControlPanelState.TRIGGERED
-                # If triggered, this state takes precedence over scenario-based states
-                if self._current_ha_state_enum != new_state_enum:
-                    _LOGGER.info(
-                        "%s: State changed from %s to %s (Triggered)",
-                        self.name,
-                        self._current_ha_state_enum,
-                        new_state_enum,
-                    )
-                    self._current_ha_state_enum = new_state_enum
-                else:
-                    _LOGGER.debug(
-                        "%s: State remains %s (Triggered)",
-                        self.name,
-                        self._current_ha_state_enum,
-                    )
-                return  # Exit early as TRIGGERED is definitive
-
-        # If not triggered, determine state based on active scenario
-        if current_active_scenario_idx == self._scenario_mappings.get(
-            CONF_SCENARIO_DISARM
-        ):
-            new_state_enum = AlarmControlPanelState.DISARMED
-        elif current_active_scenario_idx == self._scenario_mappings.get(
-            CONF_SCENARIO_ARM_HOME
-        ):
-            new_state_enum = AlarmControlPanelState.ARMED_HOME
-        elif current_active_scenario_idx == self._scenario_mappings.get(
-            CONF_SCENARIO_ARM_AWAY
-        ):
-            new_state_enum = AlarmControlPanelState.ARMED_AWAY
-        elif current_active_scenario_idx == self._scenario_mappings.get(
-            CONF_SCENARIO_ARM_NIGHT
-        ):
-            new_state_enum = AlarmControlPanelState.ARMED_NIGHT
-        elif current_active_scenario_idx == self._scenario_mappings.get(
-            CONF_SCENARIO_ARM_VACATION
-        ):
-            new_state_enum = AlarmControlPanelState.ARMED_VACATION
-        else:
-            # Active scenario does not match any mapped HA arm state.
-            # If it's a valid scenario index but not the disarm one, it implies some form of armed state.
-            if (
-                current_active_scenario_idx != -1  # A valid scenario is active
-                and self._scenario_mappings.get(CONF_SCENARIO_DISARM)
-                is not None  # Disarm scenario is known
-                and current_active_scenario_idx
-                != self._scenario_mappings.get(
-                    CONF_SCENARIO_DISARM
-                )  # And it's not that disarm scenario
-            ):
-                _LOGGER.warning(
-                    "%s: Active scenario %s does not match any mapped HA arm state "
-                    "but is not the disarm scenario. Considering it as a generic armed state",
-                    self.name,
-                    current_active_scenario_idx,
-                )
-
-                if (
-                    new_state_enum == AlarmControlPanelState.DISARMED
-                ):  # If default was DISARMED
-                    _LOGGER.debug(
-                        "%s: Unmapped active scenario %s but defaulting to ARMED_AWAY as no specific armed state found",
-                        self.name,
-                        current_active_scenario_idx,
-                    )
-
-                    new_state_enum = (
-                        AlarmControlPanelState.ARMED_CUSTOM_BYPASS
-                    )  # Fallback
-
-            elif (
-                current_active_scenario_idx == -1
-                and new_state_enum == AlarmControlPanelState.DISARMED
-            ):
-                _LOGGER.debug(
-                    "%s: No active scenario reported by panel (-1), defaulting to DISARMED",
-                    self.name,
-                )
-            # If new_state_enum is still None at this point (e.g. no disarm scenario defined and no match)
-            # then it will remain None or be UNKNOWN.
-
-        if self._current_ha_state_enum != new_state_enum:
+        # A missing/unknown scenario is NOT proof that the alarm is disarmed.
+        # Report only transitions, never a warning for every 2-second poll.
+        if self._current_ha_state_enum != new_state:
             _LOGGER.info(
-                "%s: State changed from %s to %s",
+                "%s: HA alarm state %s -> %s (INIM scenario %s, triggered areas %s)",
                 self.name,
                 self._current_ha_state_enum,
-                new_state_enum,
+                new_state,
+                scenario_index,
+                triggered_areas,
             )
-            self._current_ha_state_enum = new_state_enum
-        else:
-            _LOGGER.debug(
-                "%s: State remains %s", self.name, self._current_ha_state_enum
-            )
+            self._current_ha_state_enum = new_state
 
     async def _async_activate_scenario_by_mapping(
         self, scenario_mapping_key: str, action_name: str
