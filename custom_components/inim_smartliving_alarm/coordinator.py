@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 import logging
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -11,11 +12,16 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     CONF_EVENT_LOG_SIZE,
+    CONF_SLOW_POLLING_INTERVAL,
     DEFAULT_EVENT_LOG_SIZE,
+    DEFAULT_SLOW_POLLING_INTERVAL,
     KEY_LATEST_EVENT_INDEX_VAL,
     KEY_PROCESSED_EVENTS,
 )
 from .inim_api import InimAlarmAPI
+
+KEEP_ALIVE_MAX_INTERVAL = 10  # seconds
+SLOW_STATUS_KEYS = ("zones_excluded_status", "zones_triggered_status")
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +42,17 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.panel_host_port = f"{api_client.host}:{api_client.port}"
         self._last_known_event_index_val: int | None = None
         self.config_entry = entry
+        # The panel drops idle connections after 15-30 s: keep the connection
+        # open between cycles only when polling is comfortably faster.
+        self._keep_alive = update_interval_seconds <= KEEP_ALIVE_MAX_INTERVAL
+        # Light cycles read zones/areas/scenario; a full cycle also reads
+        # exclusions, zone alarm memory and events, at most this often.
+        self._slow_interval = entry.options.get(
+            CONF_SLOW_POLLING_INTERVAL, DEFAULT_SLOW_POLLING_INTERVAL
+        )
+        self._last_full_read: float | None = None
+        self._force_full_read = True
+        self._slow_data: dict[str, Any] = {}
 
         super().__init__(
             hass,
@@ -49,15 +66,47 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval_seconds,
         )
 
+    async def async_request_refresh(self) -> None:
+        """Refresh after a user command: read everything, exclusions included."""
+        self._force_full_read = True
+        await super().async_request_refresh()
+
+    def _full_read_due(self) -> bool:
+        if self._force_full_read or self._last_full_read is None:
+            return True
+        # Small margin so a 5 s slow interval is not pushed to 6 s by jitter.
+        return time.monotonic() - self._last_full_read >= self._slow_interval - 0.5
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the Inim Alarm panel using the API."""
-        _LOGGER.debug("Polling Inim panel (%s) for live status and events", self.name)
         current_data: dict[str, Any] = {}
+        full = self._full_read_due()
 
         try:
-            # Fetch standard status data
+            event_fetch_count_config = self.config_entry.options.get(
+                CONF_EVENT_LOG_SIZE, DEFAULT_EVENT_LOG_SIZE
+            )
+            api_call_count_param: int | None = None
+            api_call_last_index_param: int | None = self._last_known_event_index_val
+            if full and self._last_known_event_index_val is None:
+                # First run after startup/reload: fetch a backlog of recent events.
+                api_call_count_param = event_fetch_count_config
+                api_call_last_index_param = None
+                _LOGGER.info(
+                    "First event poll for %s, requesting up to %s recent events",
+                    self.name,
+                    api_call_count_param,
+                )
+
+            # Status and events share one TCP connection: a second connection
+            # right after the first costs ~2 s on the SmartLAN interface.
             status_data = await self.hass.async_add_executor_job(
-                self.api_client.get_live_status_snapshot
+                lambda: self.api_client.execute_poll_cycle(
+                    count=api_call_count_param,
+                    last_processed_compact_event_index_val=api_call_last_index_param,
+                    keep_alive=self._keep_alive,
+                    full=full,
+                )
             )
 
             if status_data is None:
@@ -75,50 +124,19 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     status_data["errors"],
                 )
 
-            current_data.update(
-                status_data
-            )  # Add status data to the coordinator's data
-
-            # --- Fetch Compact Events ---
-            event_fetch_count_config = self.config_entry.options.get(
-                CONF_EVENT_LOG_SIZE, DEFAULT_EVENT_LOG_SIZE
-            )
-
-            api_call_count_param: int | None = None
-            api_call_last_index_param: int | None = self._last_known_event_index_val
-
-            if (
-                self._last_known_event_index_val is None
-            ):  # First run after startup/reload
-                # For the very first fetch, use the configured event_log_size as the 'count'
-                # to get a decent backlog. The API will fetch the 'count' newest.
-                api_call_count_param = event_fetch_count_config
-                api_call_last_index_param = (
-                    None  # Don't provide last_index if using count
-                )
-                _LOGGER.info(
-                    "First event poll for %s or no last index known, requesting up to %s recent events",
-                    self.name,
-                    api_call_count_param,
-                )
-            # else, for subsequent polls, api_call_count_param remains None, and api_call_last_index_param is used.
-
-            _LOGGER.debug(
-                "Fetching compact events for %s. Last known index: 0x%04x, Explicit count for API: %s",
-                self.name,
-                self._last_known_event_index_val
-                if self._last_known_event_index_val is not None
-                else -1,
-                api_call_count_param,
-            )
-
-            # Use a lambda function to pass keyword arguments to the executor job
-            event_result = await self.hass.async_add_executor_job(
-                lambda: self.api_client.execute_get_compact_events(
-                    count=api_call_count_param,
-                    last_processed_compact_event_index_val=api_call_last_index_param,
-                )
-            )
+            event_result = status_data.pop("events_result", None)
+            if full:
+                if not status_data.get("errors"):
+                    self._last_full_read = time.monotonic()
+                    self._force_full_read = False
+                self._slow_data = {
+                    key: status_data.get(key)
+                    for key in SLOW_STATUS_KEYS
+                }
+            else:
+                # Keep the last exclusion / alarm-memory values between full reads.
+                status_data.update(self._slow_data)
+            current_data.update(status_data)
 
             newly_fetched_events_raw: list[dict[str, Any]] = []
             panel_latest_index: int | None = None
@@ -133,27 +151,8 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         len(newly_fetched_events_raw),
                         self.name,
                     )
-                elif (
-                    api_call_count_param is None
-                ):  # Only log "no new" if it was an incremental fetch
-                    _LOGGER.debug(
-                        "No new compact events found for %s since last poll (index 0x%04x)",
-                        self.name,
-                        self._last_known_event_index_val
-                        if self._last_known_event_index_val is not None
-                        else -1,
-                    )
 
                 if panel_latest_index is not None:
-                    if self._last_known_event_index_val != panel_latest_index:
-                        _LOGGER.debug(
-                            "Updating last known event index for %s from 0x%04x to 0x%04x",
-                            self.name,
-                            self._last_known_event_index_val
-                            if self._last_known_event_index_val is not None
-                            else -1,
-                            panel_latest_index,
-                        )
                     # Always update to the panel's current head.
                     # The sensor will decide which of these newly_fetched_events to add to its internal log.
                     self._last_known_event_index_val = panel_latest_index

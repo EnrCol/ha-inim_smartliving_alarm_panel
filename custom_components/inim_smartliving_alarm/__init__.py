@@ -254,7 +254,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         # Clean up data stored in hass.data
         if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
-            hass.data[DOMAIN].pop(entry.entry_id)
+            entry_data = hass.data[DOMAIN].pop(entry.entry_id)
+            api_client = entry_data.get(DATA_API_CLIENT)
+            if api_client is not None:
+                # Release a kept-alive panel connection.
+                await hass.async_add_executor_job(api_client.close)
             _LOGGER.debug("Cleaned up data for %s", entry.title)
         if not hass.data[DOMAIN]:  # If no more entries for this domain
             hass.data.pop(DOMAIN)

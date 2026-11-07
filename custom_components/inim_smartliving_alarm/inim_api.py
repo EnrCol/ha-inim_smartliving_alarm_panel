@@ -1967,69 +1967,140 @@ class InimAlarmAPI:
                 )
             return cfg
 
+    @staticmethod
+    def _empty_live_status(error: str | None = None) -> dict[str, Any]:
+        status: dict[str, Any] = {
+            "areas_status": None,
+            "zones_status": None,
+            "zones_excluded_status": None,
+            "zones_triggered_status": None,
+            "active_scenario": None,
+        }
+        if error:
+            status["error"] = error
+        else:
+            status["errors"] = []
+        return status
+
+    def _read_live_status(self, full: bool = True) -> dict[str, Any]:
+        """Read live status on an already open connection.
+
+        ``full=False`` reads only what must be fresh every second: zones
+        (doors/windows), areas (armed/alarm) and the active scenario. The
+        exclusion and alarm-memory reads are skipped and left as None.
+
+        No pause between commands: 60 back-to-back cycles at 1 s (330-380 ms
+        each) ran without errors on a SmartLiving 10100.
+        """
+        live_status = self._empty_live_status()
+        reads = [
+            ("areas_status", self.get_areas_status, "areas status"),
+            ("zones_status", self.get_zones_status, "zones status"),
+        ]
+        if full:
+            reads += [
+                ("zones_excluded_status", self.get_zones_excluded_status, "zones excluded status"),
+                ("zones_triggered_status", self.get_zones_triggered_status, "zones triggered status"),
+            ]
+        reads.append(("active_scenario", self.get_active_scenario, "active scenario"))
+        try:
+            for key, reader, label in reads:
+                live_status[key] = reader()
+                if live_status[key] is None:
+                    live_status["errors"].append(f"Failed to get {label}.")
+        except Exception as e:
+            logger.error(f"Exception during live status read: {e}")
+            live_status["errors"].append(f"Exception: {str(e)}")
+        return live_status
+
     def get_live_status_snapshot(self):
         """
         Connects, fetches current area status, zone status, and active scenario, then disconnects.
         Returns a dictionary with status information or an error indication.
         """
-
         with self._api_lock:  # Acquire the lock for the duration of this operation
             if not self.connect():
                 logger.error("Failed to connect to panel for live status snapshot.")
-                return {
-                    "error": "Connection failure",
-                    "areas_status": None,
-                    "zones_status": None,
-                    "zones_excluded_status": None,
-                    "zones_triggered_status": None,
-                    "active_scenario": None,
-                }
-
-            live_status = {
-                "areas_status": None,
-                "zones_status": None,
-                "zones_excluded_status": None,
-                "zones_triggered_status": None,
-                "active_scenario": None,
-                "errors": [],
-            }
-
+                return self._empty_live_status("Connection failure")
             try:
-                live_status["areas_status"] = self.get_areas_status()
-                if live_status["areas_status"] is None:
-                    live_status["errors"].append("Failed to get areas status.")
-                time.sleep(0.1)  # Consistent small delay
-
-                live_status["zones_status"] = self.get_zones_status()
-                if live_status["zones_status"] is None:
-                    live_status["errors"].append("Failed to get zones status.")
-                time.sleep(0.1)
-
-                live_status["zones_excluded_status"] = self.get_zones_excluded_status()
-                if live_status["zones_excluded_status"] is None:
-                    live_status["errors"].append("Failed to get zones excluded status.")
-                time.sleep(0.1)
-
-                live_status["zones_triggered_status"] = (
-                    self.get_zones_triggered_status()
-                )
-                if live_status["zones_triggered_status"] is None:
-                    live_status["errors"].append(
-                        "Failed to get zones triggered status."
-                    )
-                time.sleep(0.1)
-
-                live_status["active_scenario"] = self.get_active_scenario()
-                if live_status["active_scenario"] is None:
-                    live_status["errors"].append("Failed to get active scenario.")
-
-            except Exception as e:
-                logger.error(f"Exception during get_live_status_snapshot: {e}")
-                live_status["errors"].append(f"Exception: {str(e)}")
+                return self._read_live_status()
             finally:
                 self.disconnect()
 
-            return live_status
+    def execute_poll_cycle(
+        self,
+        count: int | None = None,
+        last_processed_compact_event_index_val: int | None = None,
+        keep_alive: bool = False,
+        full: bool = True,
+    ) -> dict[str, Any]:
+        """Read live status and new compact events over ONE TCP connection.
+
+        The SmartLAN interface delays a new connection by about 2 seconds when
+        it follows a just-closed one (measured on a SmartLiving 10100), so
+        status and events share a single connection. With ``keep_alive`` the
+        connection stays open for the next cycle (needed for ~1 s polling);
+        the panel drops it after 15-30 s idle, so callers must poll faster
+        than that. Any error closes it, so a desynchronised stream never
+        survives into the next cycle.
+
+        ``full=False`` is the light cycle: zones, areas and active scenario
+        only; no exclusions, alarm memory or events ("events_result" is None).
+        """
+        with self._api_lock:
+            reused = self._is_connected
+            if not self.connect():
+                logger.error("Failed to connect to panel for polling cycle.")
+                result = self._empty_live_status("Connection failure")
+                result["events_result"] = {"events": [], "latest_event_index_val": None}
+                return result
+            healthy = False
+            try:
+                result = self._read_live_status(full)
+                if result["errors"] and reused:
+                    # The kept connection went stale: reopen once and retry.
+                    logger.info("Kept panel connection failed, reconnecting")
+                    self.disconnect()
+                    if not self.connect():
+                        logger.error("Failed to reconnect to panel for polling cycle.")
+                        result = self._empty_live_status("Connection failure")
+                        result["events_result"] = {
+                            "events": [],
+                            "latest_event_index_val": None,
+                        }
+                        return result
+                    result = self._read_live_status(full)
+                if not full:
+                    result["events_result"] = None
+                    healthy = not result["errors"]
+                    return result
+                events_result: dict[str, Any] = {
+                    "events": [],
+                    "latest_event_index_val": None,
+                }
+                try:
+                    events_result = self.get_compact_events(
+                        count=count,
+                        last_processed_compact_event_index_val=last_processed_compact_event_index_val,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Exception while fetching compact events: %s", e, exc_info=True
+                    )
+                result["events_result"] = events_result
+                healthy = (
+                    not result["errors"]
+                    and events_result.get("latest_event_index_val") is not None
+                )
+                return result
+            finally:
+                if not (keep_alive and healthy):
+                    self.disconnect()
+
+    def close(self) -> None:
+        """Close a kept-alive connection (on unload)."""
+        with self._api_lock:
+            self.disconnect()
 
     def execute_arm_disarm_areas(self, areas_to_arm=None, areas_to_disarm=None):
         """Connects, performs arm/disarm operation, then disconnects. Returns success status."""

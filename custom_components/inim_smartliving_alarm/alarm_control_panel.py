@@ -206,7 +206,6 @@ class InimAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        _LOGGER.debug("Alarm panel '%s' received coordinator update", self.name)
         self._update_internal_state()  # This updates _current_ha_state_enum
         self.async_write_ha_state()  # Update HA state, which will use the new alarm_state property
 

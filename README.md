@@ -8,11 +8,11 @@ Home Assistant Integration for Inim SmartLiving Alarm Systems
 
 [![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=EnrCol&repository=ha-inim_smartliving_alarm_panel&category=integration)
 
-**Beta v0.3.4b1.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
+**Beta v0.3.4b3.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
 
 **Validation scope:** field tests and protocol verification are available only on SmartLiving **10100** (firmware 6.09); 505/515 and 1050/1050L must not be described as hardware-validated. The automatic 10100 entity-import changes in this beta are pending a new real-installation soak test. Never treat a beta as a replacement for the official security system.
 
-**Marketplace updates:** add this repository as a custom Integration repository and enable **beta/prerelease versions** for it to receive `v0.3.4b1`. Stable updates remain separate. Release notes: [v0.3.4b1](RELEASE_NOTES_0.3.4b1.md).
+**Marketplace updates:** add this repository as a custom Integration repository and enable **beta/prerelease versions** for it to receive `v0.3.4b3`. Stable updates remain separate. Release notes: [v0.3.4b3](RELEASE_NOTES_0.3.4b3.md), [v0.3.4b2](RELEASE_NOTES_0.3.4b2.md), [v0.3.4b1](RELEASE_NOTES_0.3.4b1.md).
 
 This custom integration connects Home Assistant to Inim SmartLiving alarm panels equipped with a SmartLAN/SI network interface. It allows local monitoring and control of the alarm system from Home Assistant.
 
@@ -135,7 +135,8 @@ After installation and restart:
 5. Click **Submit**. The integration connects to the panel and reads the initial static configuration.
 6. Configure initial options:
 
-   * **Polling Interval**: how often live panel status is refreshed.
+   * **Fast polling interval** (1-300 s, default 2 s): how often zones (doors/windows), areas and the active scenario are read. 1 s works on the reference SmartLiving 10100.
+   * **Slow polling interval** (1-300 s, default 10 s): how often zone exclusions, zone alarm memory and the event log are also read. After a command sent from Home Assistant everything is read immediately.
    * **Limit Areas / Zones / Scenarios**: maximum number of entities to create.
    * **Event Log Size**: number of recent events stored in the event-log sensor.
    * **Reader Names**: optional manual comma-separated fallback for reader names. Supported profiles can read reader names automatically.
@@ -161,6 +162,14 @@ The options flow is split into two steps:
 
 1. Connection/profile/static options.
 2. Scenario mapping options.
+
+### Polling and the SmartLAN connection
+
+The SmartLAN interface accepts **one TCP client at a time** and delays a new connection by about 2 seconds after the previous one closes. The integration therefore reads everything it needs in a polling cycle over a single connection and, with a fast interval of 10 s or less, keeps that connection open between cycles (the panel drops idle connections after 15-30 s).
+
+While Home Assistant holds the connection, other local clients — for example installer programming software — cannot connect. Disable the integration or set the fast interval above 10 s before a local programming session. On the reference installation the INIM mobile app (cloud) kept working.
+
+The options form never shows the stored PIN; leave the PIN field empty to keep it.
 
 ### Refresh initial panel config
 
@@ -240,6 +249,7 @@ Troubleshooting
 * Verify Home Assistant can reach the SmartLAN module.
 * Check firewall, VLAN and routing rules.
 * Confirm the SmartLAN module is powered and online.
+* Make sure no other local client (programming software, another Home Assistant instance) is holding the single SmartLAN connection.
 
 ### Scenarios do not activate
 
@@ -269,7 +279,7 @@ This means the static names were likely read with the wrong profile or with stal
 ### Entities do not appear or do not update
 
 * Check Home Assistant logs for `custom_components.inim_smartliving_alarm`.
-* Verify the polling interval.
+* Verify the fast and slow polling intervals. With debug logging, `Finished fetching … in X seconds` shows the duration of each cycle.
 * Restart Home Assistant after installing or updating the integration.
 
 ### Incorrect number of entities

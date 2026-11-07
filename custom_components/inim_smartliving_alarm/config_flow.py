@@ -19,6 +19,7 @@ from .const import (
     CONF_PANEL_MODEL,
     CONF_PANEL_NAME,
     CONF_POLLING_INTERVAL,
+    CONF_SLOW_POLLING_INTERVAL,
     CONF_READER_NAMES,
     CONF_REFRESH_INITIAL_CONFIG,
     CONF_SCENARIO_ARM_AWAY,
@@ -35,6 +36,7 @@ from .const import (
     DEFAULT_PANEL_MODEL,
     DEFAULT_PANEL_NAME,
     DEFAULT_POLLING_INTERVAL,
+    DEFAULT_SLOW_POLLING_INTERVAL,
     DEFAULT_PORT,
     DOMAIN,
     INITIAL_PANEL_CONFIG_REVISION,
@@ -316,6 +318,9 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             final_options_for_entry = {
                 CONF_PANEL_MODEL: step1_data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
                 CONF_POLLING_INTERVAL: user_input[CONF_POLLING_INTERVAL],
+                CONF_SLOW_POLLING_INTERVAL: user_input.get(
+                    CONF_SLOW_POLLING_INTERVAL, DEFAULT_SLOW_POLLING_INTERVAL
+                ),
                 CONF_LIMIT_AREAS: user_input[CONF_LIMIT_AREAS],
                 CONF_LIMIT_ZONES: user_input[CONF_LIMIT_ZONES],
                 CONF_LIMIT_SCENARIOS: user_input[CONF_LIMIT_SCENARIOS],
@@ -340,7 +345,11 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(
                 CONF_POLLING_INTERVAL,
                 default=step1_data.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL),
-            ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
+            vol.Optional(
+                CONF_SLOW_POLLING_INTERVAL,
+                default=step1_data.get(CONF_SLOW_POLLING_INTERVAL, DEFAULT_SLOW_POLLING_INTERVAL),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
             vol.Optional(
                 CONF_LIMIT_AREAS,
                 default=step1_data.get(
@@ -515,6 +524,9 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                 self._pending_options = {
                     CONF_PANEL_MODEL: new_panel_model,
                     CONF_POLLING_INTERVAL: user_input.get(CONF_POLLING_INTERVAL),
+                    CONF_SLOW_POLLING_INTERVAL: user_input.get(
+                        CONF_SLOW_POLLING_INTERVAL, DEFAULT_SLOW_POLLING_INTERVAL
+                    ),
                     CONF_LIMIT_AREAS: user_input.get(CONF_LIMIT_AREAS),
                     CONF_LIMIT_ZONES: user_input.get(CONF_LIMIT_ZONES),
                     CONF_LIMIT_SCENARIOS: user_input.get(CONF_LIMIT_SCENARIOS),
@@ -537,9 +549,9 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         options_schema_dict = {
-            vol.Optional(
-                CONF_PIN, description={"suggested_value": self.current_pin}
-            ): str,
+            # Never echo the stored PIN back to the UI/API: an empty field
+            # keeps the current PIN (see async_step_init).
+            vol.Optional(CONF_PIN): str,
             vol.Optional(
                 CONF_PANEL_MODEL,
                 default=self.current_panel_model,
@@ -551,7 +563,13 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_POLLING_INTERVAL,
                 default=self.current_settings.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL),
-            ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
+            vol.Optional(
+                CONF_SLOW_POLLING_INTERVAL,
+                default=self.current_settings.get(
+                    CONF_SLOW_POLLING_INTERVAL, DEFAULT_SLOW_POLLING_INTERVAL
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
             vol.Optional(
                 CONF_LIMIT_AREAS,
                 default=_schema_limit_default(
@@ -602,6 +620,9 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                     {
                         CONF_PANEL_MODEL: self.current_panel_model,
                         CONF_POLLING_INTERVAL: settings.get(CONF_POLLING_INTERVAL),
+                        CONF_SLOW_POLLING_INTERVAL: settings.get(
+                            CONF_SLOW_POLLING_INTERVAL, DEFAULT_SLOW_POLLING_INTERVAL
+                        ),
                         CONF_LIMIT_AREAS: settings.get(CONF_LIMIT_AREAS),
                         CONF_LIMIT_ZONES: settings.get(CONF_LIMIT_ZONES),
                         CONF_LIMIT_SCENARIOS: settings.get(CONF_LIMIT_SCENARIOS),

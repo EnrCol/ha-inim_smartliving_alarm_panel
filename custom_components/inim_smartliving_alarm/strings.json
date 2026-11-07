@@ -15,7 +15,8 @@
           "title": "Initial Options",
           "description": "Set the initial options for your Inim Alarm integration. These can be changed later from the integration's configuration page.",
           "data": {
-            "polling_interval": "Polling Interval (seconds)",
+            "polling_interval": "Fast polling interval: doors/windows, areas, scenario (seconds)",
+            "slow_polling_interval": "Slow polling interval: exclusions, zone alarm memory, events (seconds)",
             "limit_areas": "Number of Areas to import",
             "limit_zones": "Number of Zones to import",
             "limit_scenarios": "Number of Scenarios to import",
@@ -46,8 +47,9 @@
           "title": "Inim SmartLiving Alarm Options",
           "description": "Adjust the settings for your Inim Alarm integration.",
           "data": {
-            "pin": "New PIN Code",
-            "polling_interval": "Polling Interval (seconds)",
+            "pin": "New PIN Code (leave empty to keep the current one)",
+            "polling_interval": "Fast polling interval: doors/windows, areas, scenario (seconds)",
+            "slow_polling_interval": "Slow polling interval: exclusions, zone alarm memory, events (seconds)",
             "limit_areas": "Number of Areas to import",
             "limit_zones": "Number of Zones to import",
             "limit_scenarios": "Number of Scenarios to import",
