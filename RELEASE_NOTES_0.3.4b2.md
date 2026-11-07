@@ -1,6 +1,6 @@
-# INIM SmartLiving Alarm — v0.3.4b2 (beta candidate, NOT published)
+# INIM SmartLiving Alarm — v0.3.4b2 (beta)
 
-Based on v0.3.4b1. This document accompanies a **draft PR only**. No release or Home Assistant deployment is authorized by creating this branch.
+Based on v0.3.4b1. Unofficial beta; no change to INIM protocol commands or panel programming.
 
 ## Candidate changes
 - Show only programmed scenario names in the setup and options selectors, with their real, zero-based INIM indexes. Placeholder entries and unprogrammed slots are excluded.
@@ -10,17 +10,18 @@ Based on v0.3.4b1. This document accompanies a **draft PR only**. No release or 
 - An active scenario not mapped to an HA arm mode is reported as `unknown` in `alarm_control_panel` instead of falsely presenting `armed_custom_bypass`. Missing scenario reads no longer imply `disarmed`. Triggered areas retain highest priority.
 - Introduce a separate read-only binary sensor `Any Area Armed` based on programmed area status. `on` means at least one area is armed, `off` requires all programmed areas to be verified disarmed, and `unknown` represents incomplete or unavailable data. No new physical command is sent.
 - Avoid warning messages every 2-second polling cycle for an otherwise valid scenario missing an HA mapping; log only meaningful alarm state transitions.
-- Extend automated regression tests for scenario choices, manual override preservation, missing data, unknown scenarios, triggered precedence and tri-state area status.
+- Reduce API log amplification during normal 2-second polling: omit routine TCP connect/disconnect messages and raw HEX frames (which could disclose payload/PIN), and log compact event batches only when nonempty. Communication errors and real actions remain logged.
+- Extend automated regression tests for scenario choices, manual override preservation, missing data, unknown scenarios, triggered precedence, tri-state area status, quiet polling and retained connection failures.
 
-## Verification before publication
-- GitHub Actions Python, HACS and hassfest checks must pass.
-- Install only in isolated Home Assistant TEST after explicit approval. Production and the panel's programmed scenarios remain unchanged.
-- Confirm original scenario names and indexes, the manual `Home -> SOLO SEMINT. (index 2)` mapping, no false disarmed states, and no recurring unmapped-scenario warnings.
-- Confirm the new area-armed sensor from real areas and test unknown read behavior without issuing alarm commands.
+## Validation
+- Clean installation on isolated Home Assistant TEST (SmartLiving 10100 firmware 6.09) confirmed 5 programmed areas, 19 zones, 5 scenarios, 18 writable zone switches (Z011 excluded), and no unavailable entities.
+- `Home -> SOLO SEMINT. (index 2)` read back as `armed_home`; temporarily removing only the Home mapping produced `unknown` (not `disarmed`) while the independent area sensor stayed `on`; original mapping restored.
+- The logging change has automated regression coverage; it must also be rechecked after loading this revised commit on TEST.
+- Python, HACS and hassfest checks must pass before publication. Production and the panel's programmed scenarios remain unchanged.
 
-## Still open, deliberately NOT silently claimed fixed
-- The integration/Marketplace icon was still invisible on both pages with v0.3.4b1; repository PNG files passed structural validation, but the local installation assets and branding endpoint have not yet been verified. Do not publish b2 with a claim that the icon is fixed until that check has been performed.
-- Excessive DEBUG logs in the TEST instance may be due to its logging configuration; only the known repeated unmapped-scenario warning is addressed here.
+## Known limitations
+- Integration and Marketplace icons are visible in the HA TEST interface after clean setup; no PNG replacement was needed. This is a TEST observation, not proof of every HACS frontend/installation.
+- The high-volume INIM API logging was reproduced on TEST and addressed in code. Live verification of this exact logging commit is required before declaring that warning resolved.
 - PR #12 from scorbacella (active-scenario read mask), OC1/OC2, Z011 output handling, and unknown compact event action codes are excluded.
 - Only SmartLiving 10100 firmware 6.09 is available for physical validation; 505/515 and 1050 hardware is not tested.
 
