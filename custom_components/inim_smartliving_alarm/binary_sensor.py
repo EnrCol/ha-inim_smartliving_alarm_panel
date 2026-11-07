@@ -40,7 +40,7 @@ from .const import (
     KEY_LIVE_ZONE_TRIGGERED_STATUSES_MAP,
     KEY_LIVE_ZONES_TRIGGERED_STATUS,
 )
-from .effective_entities import resolve_any_area_armed
+from .effective_entities import effective_indexes, resolve_any_area_armed
 from .panel_profiles import PANEL_MODEL_10100
 
 _LOGGER = logging.getLogger(__name__)
@@ -172,17 +172,15 @@ async def async_setup_entry(
             )
         )
 
-    num_scenarios_to_create = min(len(all_scenario_names), limit_scenarios)
+    programmed_indexes = effective_indexes(all_scenario_names, "scenario", limit_scenarios)
     _LOGGER.debug(
         "Setting up %s Scenario Active Binary Sensors (Limit: %s, Available: %s)",
-        num_scenarios_to_create,
+        len(programmed_indexes),
         limit_scenarios,
         len(all_scenario_names),
     )
-    for i in range(num_scenarios_to_create):
-        scenario_name = (
-            all_scenario_names[i] if all_scenario_names[i] else f"Scenario {i + 1}"
-        )
+    for i in programmed_indexes:
+        scenario_name = all_scenario_names[i].strip()
         binary_sensors_to_add.append(
             InimSpecificScenarioActiveBinarySensor(
                 coordinator, entry, panel_display_name, system_info, i, scenario_name
