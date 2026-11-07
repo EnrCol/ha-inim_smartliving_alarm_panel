@@ -43,8 +43,10 @@ from .const import (
     SYSTEM_MAX_SCENARIOS,
     SYSTEM_MAX_ZONES,
 )
+from .effective_entities import build_automatic_options, effective_indexes
 from .inim_api import InimAlarmAPI
 from .panel_profiles import (
+    PANEL_MODEL_10100,
     PANEL_MODEL_OPTIONS,
     apply_panel_profile_api_patches,
     configure_api_for_panel,
@@ -146,11 +148,10 @@ def _build_scenario_choices(initial_config: dict[str, Any]) -> dict[str, str]:
     scenario_names_data = initial_config.get("scenarios", {})
     scenario_names_list = scenario_names_data.get("names", [])
     scenario_choices = {"none": "None (Do Not Assign)"}
-    if scenario_names_list:
-        for i, name in enumerate(scenario_names_list):
-            scenario_choices[str(i)] = (
-                f"Scenario {i + 1}: {name if name else f'Unnamed Scenario {i + 1}'}"
-            )
+    # Preserve the real zero-based INIM index, including gaps, but only show
+    # programmed scenarios. Never offer a placeholder (e.g. SCENARIO 030).
+    for i in effective_indexes(scenario_names_list, "scenario"):
+        scenario_choices[str(i)] = f"{i}: {scenario_names_list[i].strip()}"
     return scenario_choices
 
 
@@ -291,6 +292,14 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         panel_profile = get_panel_profile(step1_data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL))
 
         scenario_choices = _build_scenario_choices(initial_config_data)
+        # On first installation, propose verified limits and unambiguous mappings
+        # from the panel. Explicit user choices always override these defaults.
+        detected_options, _ = build_automatic_options(initial_config_data, {})
+        detected_limits = (
+            detected_options
+            if step1_data.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL) == PANEL_MODEL_10100
+            else {}
+        )
 
         if user_input is not None:
             # Combine data from step 1 and this step
@@ -334,15 +343,21 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ): vol.All(vol.Coerce(int), vol.Range(min=2, max=300)),
             vol.Optional(
                 CONF_LIMIT_AREAS,
-                default=step1_data.get(CONF_LIMIT_AREAS, int(panel_profile["max_areas"])),
+                default=step1_data.get(
+                    CONF_LIMIT_AREAS, detected_limits.get(CONF_LIMIT_AREAS, int(panel_profile["max_areas"]))
+                ),
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_AREAS)),
             vol.Optional(
                 CONF_LIMIT_ZONES,
-                default=step1_data.get(CONF_LIMIT_ZONES, int(panel_profile["max_zones"])),
+                default=step1_data.get(
+                    CONF_LIMIT_ZONES, detected_limits.get(CONF_LIMIT_ZONES, int(panel_profile["max_zones"]))
+                ),
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_ZONES)),
             vol.Optional(
                 CONF_LIMIT_SCENARIOS,
-                default=step1_data.get(CONF_LIMIT_SCENARIOS, int(panel_profile["max_scenarios"])),
+                default=step1_data.get(
+                    CONF_LIMIT_SCENARIOS, detected_limits.get(CONF_LIMIT_SCENARIOS, int(panel_profile["max_scenarios"]))
+                ),
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_SCENARIOS)),
             vol.Optional(CONF_EVENT_LOG_SIZE, default=DEFAULT_EVENT_LOG_SIZE): vol.All(
                 vol.Coerce(int), vol.Range(min=1, max=SYSTEM_MAX_EVENT_LOG_SIZE)
@@ -352,19 +367,34 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if len(scenario_choices) > 1:
             initial_options_schema_dict.update(
                 {
-                    vol.Optional(CONF_SCENARIO_ARM_HOME, default="none"): vol.In(
+                    vol.Optional(
+                        CONF_SCENARIO_ARM_HOME,
+                        default=_scenario_default(detected_options, CONF_SCENARIO_ARM_HOME, scenario_choices),
+                    ): vol.In(
                         scenario_choices
                     ),
-                    vol.Optional(CONF_SCENARIO_ARM_AWAY, default="none"): vol.In(
+                    vol.Optional(
+                        CONF_SCENARIO_ARM_AWAY,
+                        default=_scenario_default(detected_options, CONF_SCENARIO_ARM_AWAY, scenario_choices),
+                    ): vol.In(
                         scenario_choices
                     ),
-                    vol.Optional(CONF_SCENARIO_ARM_NIGHT, default="none"): vol.In(
+                    vol.Optional(
+                        CONF_SCENARIO_ARM_NIGHT,
+                        default=_scenario_default(detected_options, CONF_SCENARIO_ARM_NIGHT, scenario_choices),
+                    ): vol.In(
                         scenario_choices
                     ),
-                    vol.Optional(CONF_SCENARIO_ARM_VACATION, default="none"): vol.In(
+                    vol.Optional(
+                        CONF_SCENARIO_ARM_VACATION,
+                        default=_scenario_default(detected_options, CONF_SCENARIO_ARM_VACATION, scenario_choices),
+                    ): vol.In(
                         scenario_choices
                     ),
-                    vol.Optional(CONF_SCENARIO_DISARM, default="none"): vol.In(
+                    vol.Optional(
+                        CONF_SCENARIO_DISARM,
+                        default=_scenario_default(detected_options, CONF_SCENARIO_DISARM, scenario_choices),
+                    ): vol.In(
                         scenario_choices
                     ),
                 }
