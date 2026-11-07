@@ -16,12 +16,12 @@ Based on v0.3.4b1. Unofficial beta; no change to INIM protocol commands or panel
 ## Validation
 - Clean installation on isolated Home Assistant TEST (SmartLiving 10100 firmware 6.09) confirmed 5 programmed areas, 19 zones, 5 scenarios, 18 writable zone switches (Z011 excluded), and no unavailable entities.
 - `Home -> SOLO SEMINT. (index 2)` read back as `armed_home`; temporarily removing only the Home mapping produced `unknown` (not `disarmed`) while the independent area sensor stayed `on`; original mapping restored.
-- The logging change has automated regression coverage; it must also be rechecked after loading this revised commit on TEST.
+- Logging verification on TEST after commit `bc350c4`: no errors or `200 messages` warning, but three DEBUG messages were still produced every ~5 seconds from the compact-event pointer/no-change check. The additional fix removes those messages even when DEBUG is enabled; final live verification requires reloading this newer commit on TEST.
 - Python, HACS and hassfest checks must pass before publication. Production and the panel's programmed scenarios remain unchanged.
 
 ## Known limitations
 - Integration and Marketplace icons are visible in the HA TEST interface after clean setup; no PNG replacement was needed. This is a TEST observation, not proof of every HACS frontend/installation.
-- The high-volume INIM API logging was reproduced on TEST and addressed in code. Live verification of this exact logging commit is required before declaring that warning resolved.
+- The high-volume INIM API logging was reproduced on TEST and addressed in code, including a follow-up change for compact-event polling. Live verification of the final commit is required before declaring that warning resolved.
 - PR #12 from scorbacella (active-scenario read mask), OC1/OC2, Z011 output handling, and unknown compact event action codes are excluded.
 - Only SmartLiving 10100 firmware 6.09 is available for physical validation; 505/515 and 1050 hardware is not tested.
 
