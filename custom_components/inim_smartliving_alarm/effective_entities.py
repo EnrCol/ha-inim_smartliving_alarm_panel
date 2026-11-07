@@ -44,9 +44,8 @@ _SCENARIO_ALIASES = {
         "AWAY",
     },
     CONF_SCENARIO_ARM_HOME: {
-        "SOLO P T",
-        "SOLO PT",
-        "PARZIALE P T",
+        # Only explicit Home labels are unambiguous. "SOLO P.T." is
+        # installation-specific and must be chosen by the user.
         "ARMED HOME",
         "HOME",
     },
@@ -105,6 +104,7 @@ def infer_scenario_mappings(scenario_names: Iterable[str | None]) -> dict[str, i
 
     Only unambiguous exact normalized-name matches are returned. Unknown or
     duplicate aliases are intentionally left unmapped for manual selection.
+    Site-specific partial scenarios (e.g. SOLO P.T.) are never guessed as Home.
     """
     matches: dict[str, list[int]] = {key: [] for key in _SCENARIO_ALIASES}
 
@@ -136,8 +136,8 @@ def build_automatic_options(
     """Build automatic limits and safe scenario mappings from panel data.
 
     Import limits are recalculated from the last programmed slot. Existing
-    non-empty scenario mappings remain manual overrides; only missing/None
-    mappings are filled from unambiguous exact-name matches.
+    scenario mappings (including explicit None) remain manual overrides;
+    only absent mapping keys are filled from unambiguous exact-name matches.
     """
     area_names = initial_panel_config.get(KEY_INIT_AREAS, {}).get(
         KEY_INIT_AREA_NAMES, []
@@ -167,7 +167,9 @@ def build_automatic_options(
     inferred_mappings = infer_scenario_mappings(scenario_names)
     applied_mappings: dict[str, int] = {}
     for mapping_key, scenario_index in inferred_mappings.items():
-        if updated_options.get(mapping_key) is None:
+        if mapping_key not in updated_options:
+            # A key explicitly saved as None means the user selected "none".
+            # Never override that choice at runtime.
             updated_options[mapping_key] = scenario_index
             applied_mappings[mapping_key] = scenario_index
 
@@ -181,3 +183,54 @@ def build_automatic_options(
         "applied_scenario_mappings": applied_mappings,
     }
     return updated_options, summary
+
+
+
+def resolve_ha_alarm_state(
+    active_scenario_index: int | None,
+    scenario_mappings: dict[str, int | None],
+    triggered_areas: Iterable[int] | None = None,
+) -> str | None:
+    """Resolve only verified states; None makes alarm_control_panel unknown.
+
+    Never infer "disarmed" from missing data and never use "custom_bypass"
+    for an unrecognized scenario. Physical alarm trigger takes precedence.
+    """
+    if triggered_areas and any(triggered_areas):
+        return "triggered"
+    if active_scenario_index is None or active_scenario_index < 0:
+        return None
+
+    states_by_mapping = (
+        (CONF_SCENARIO_DISARM, "disarmed"),
+        (CONF_SCENARIO_ARM_HOME, "armed_home"),
+        (CONF_SCENARIO_ARM_AWAY, "armed_away"),
+        (CONF_SCENARIO_ARM_NIGHT, "armed_night"),
+        (CONF_SCENARIO_ARM_VACATION, "armed_vacation"),
+    )
+    for mapping_key, state in states_by_mapping:
+        mapped_index = scenario_mappings.get(mapping_key)
+        if mapped_index is not None and active_scenario_index == mapped_index:
+            return state
+    return None
+
+
+def resolve_any_area_armed(
+    area_statuses: dict[int, str] | None,
+    programmed_area_names: Iterable[str | None],
+    limit: int | None = None,
+) -> bool | None:
+    """Read-only tri-state: True if armed, False only if ALL known disarmed.
+
+    Unknown or missing area status must never be presented as disarmed.
+    Only programmed areas within the import limit count.
+    """
+    areas = effective_indexes(programmed_area_names, "area", limit)
+    if not areas or not area_statuses:
+        return None
+    values = [area_statuses.get(index + 1) for index in areas]
+    if any(isinstance(value, str) and value.lower() == "armed" for value in values):
+        return True
+    if all(isinstance(value, str) and value.lower() == "disarmed" for value in values):
+        return False
+    return None
