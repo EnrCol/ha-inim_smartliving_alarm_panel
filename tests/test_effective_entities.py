@@ -1,5 +1,6 @@
 """Tests for automatic SmartLiving entity detection."""
 
+from custom_components.inim_smartliving_alarm.config_flow import _build_scenario_choices
 from custom_components.inim_smartliving_alarm.const import (
     CONF_LIMIT_AREAS,
     CONF_LIMIT_SCENARIOS,
@@ -170,3 +171,19 @@ def test_any_area_armed_is_tri_state_and_ignores_unprogrammed_areas() -> None:
     assert resolve_any_area_armed(
         {1: "disarmed", 2: "armed"}, names, limit=1
     ) is False
+
+
+def test_scenario_selector_preserves_real_indexes_but_omits_placeholders() -> None:
+    initial_config = {
+        "scenarios": {"names": [
+            "DISINSERITO", "SCENARIO 002", "SOLO SEMINT.",
+            "", "NOTTE", "SCENARIO 006",
+        ]}
+    }
+    choices = _build_scenario_choices(initial_config)
+    assert choices == {
+        "none": "None (Do Not Assign)",
+        "0": "0: DISINSERITO",
+        "2": "2: SOLO SEMINT.",
+        "4": "4: NOTTE",
+    }
