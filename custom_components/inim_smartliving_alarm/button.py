@@ -28,6 +28,7 @@ from .const import (
     KEY_INIT_SYSTEM_INFO_TYPE,
     KEY_INIT_SYSTEM_INFO_VERSION,
 )
+from .effective_entities import effective_indexes
 from .inim_api import InimAlarmAPI
 from .utils import async_handle_scenario_activation_failure
 
@@ -75,21 +76,17 @@ async def async_setup_entry(
         )
         return
 
-    num_scenarios_to_create = min(len(all_scenario_names), limit_scenarios)
+    programmed_indexes = effective_indexes(all_scenario_names, "scenario", limit_scenarios)
     _LOGGER.debug(
         "Setting up %s Scenario Buttons (Limit: %s, Available: %s)",
-        num_scenarios_to_create,
+        len(programmed_indexes),
         limit_scenarios,
         len(all_scenario_names),
     )
 
-    for i in range(num_scenarios_to_create):
+    for i in programmed_indexes:
         scenario_index_0_based = i
-        scenario_name = (
-            all_scenario_names[i]
-            if all_scenario_names[i]
-            else f"Scenario {scenario_index_0_based + 1}"
-        )
+        scenario_name = all_scenario_names[i].strip()
         current_scenario_activation_details = next(
             (
                 sa
