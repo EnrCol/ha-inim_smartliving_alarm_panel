@@ -60,12 +60,13 @@ def test_normal_live_poll_is_quiet_at_debug(monkeypatch, caplog):
     assert not [r for r in caplog.records if r.name == inim_api.logger.name]
 
 
-def test_no_new_compact_events_do_not_spam_info(monkeypatch, caplog):
+def test_no_new_compact_events_do_not_spam_even_debug(monkeypatch, caplog):
     api = InimAlarmAPI("127.0.0.1", 5004, "1234")
-    monkeypatch.setattr(api, "_get_raw_next_event_pointer", lambda: "0002")
+    # Exercise real pointer parsing, but stub TCP I/O: "0200" -> X=0x0002.
+    monkeypatch.setattr(api, "_send_command_core", lambda *a, **kw: "0200")
 
     # x_next = 2 => most recent compact index = 0x920D.
-    with caplog.at_level(logging.INFO, logger=inim_api.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=inim_api.logger.name):
         result = api.get_compact_events(last_processed_compact_event_index_val=0x920D)
 
     assert result["events"] == []
@@ -79,11 +80,15 @@ def test_new_compact_event_still_emits_useful_log(monkeypatch, caplog):
     monkeypatch.setattr(api, "_fetch_one_compact_event", lambda *a: {"event": "example"})
     monkeypatch.setattr(inim_api.time, "sleep", lambda _: None)
 
-    with caplog.at_level(logging.INFO, logger=inim_api.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=inim_api.logger.name):
         result = api.get_compact_events(last_processed_compact_event_index_val=0x9204)
 
     assert len(result["events"]) == 1
     assert any("Retrieved 1 compact events" in r.getMessage() for r in caplog.records)
+    assert not [
+        r for r in caplog.records
+        if r.name == inim_api.logger.name and r.levelno == logging.DEBUG
+    ]
 
 
 def test_connection_error_remains_visible(monkeypatch, caplog):
