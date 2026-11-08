@@ -37,6 +37,7 @@ from .panel_profiles import (
     PANEL_MODEL_10100,
     apply_panel_profile_api_patches,
     configure_api_for_panel,
+    detect_panel_model,
 )
 from .smartliving_10100 import apply_smartliving_10100_precheck_fix
 
@@ -192,6 +193,23 @@ def _apply_automatic_10100_runtime_options(
     return summary
 
 
+def _warn_if_profile_mismatch(entry: ConfigEntry, panel_model: str) -> None:
+    """Log when the selected profile does not match the type the panel reports."""
+    system_type = (
+        (entry.data.get(DATA_INITIAL_PANEL_CONFIG) or {}).get("system_info") or {}
+    ).get("type")
+    detected = detect_panel_model(system_type)
+    if detected is not None and detected != panel_model:
+        _LOGGER.warning(
+            "%s: the panel reports type %r (profile %s) but profile %s is selected; "
+            "names and zone exclusion may be wrong. Change the panel model in the options.",
+            entry.title,
+            system_type,
+            detected,
+            panel_model,
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Inim Alarm from a config entry."""
     _LOGGER.info(
@@ -224,6 +242,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # limits remain untouched and are ignored at runtime.
     _apply_automatic_10100_runtime_options(entry, panel_model)
     _configure_active_scenario_mask(api, entry)
+    _warn_if_profile_mismatch(entry, panel_model)
 
     # Create the custom coordinator instance
     coordinator_name = f"{DOMAIN} data ({entry.title})"

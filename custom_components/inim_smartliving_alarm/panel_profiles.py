@@ -30,6 +30,39 @@ PANEL_MODEL_OPTIONS = {
     PANEL_MODEL_10100: "SmartLiving 10100 / 10100L",
 }
 
+# Setup only: resolved to a concrete model from the type the panel reports.
+PANEL_MODEL_AUTO = "auto"
+PANEL_MODEL_SETUP_OPTIONS = {
+    PANEL_MODEL_AUTO: "Automatic (detected from the panel)",
+    **PANEL_MODEL_OPTIONS,
+}
+
+
+def detect_panel_model(system_type: str | None) -> str | None:
+    """Map the system type reported by the panel to a profile.
+
+    The panel answers the system info request with e.g. "6.09 10100" (reference
+    10100) or "6.07 01050" (example in the original integration). 515 and 505
+    use the 1050-compatible profile. Unknown types return None.
+    """
+    digits = "".join(ch for ch in str(system_type or "") if ch.isdigit()).lstrip("0")
+    if digits.startswith("10100"):
+        return PANEL_MODEL_10100
+    if digits in ("1050", "515", "505"):
+        return PANEL_MODEL_1050
+    return None
+
+
+def read_panel_system_info(api: InimAlarmAPI) -> dict[str, Any] | None:
+    """Connect, read only the system info (type and firmware), disconnect."""
+    with api._api_lock:
+        if not api.connect():
+            return None
+        try:
+            return api.get_system_info()
+        finally:
+            api.disconnect()
+
 BYTES_PER_NAME = 16
 MAX_MEMORY_READ_DATA_BYTES = 250
 
