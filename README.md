@@ -8,7 +8,7 @@ Home Assistant Integration for Inim SmartLiving Alarm Systems
 
 [![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=EnrCol&repository=ha-inim_smartliving_alarm_panel&category=integration)
 
-**Beta v0.3.4b4.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
+**Beta v0.3.4b5.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
 
 **Validation scope:** field tests and protocol verification are available only on SmartLiving **10100** (firmware 6.09); 505/515 and 1050/1050L must not be described as hardware-validated. The automatic 10100 entity-import changes in this beta are pending a new real-installation soak test. Never treat a beta as a replacement for the official security system.
 
@@ -166,6 +166,8 @@ The options flow is split into two steps:
 ### Polling and the SmartLAN connection
 
 The SmartLAN interface accepts **one TCP client at a time** and delays a new connection by about 2 seconds after the previous one closes. The integration therefore reads everything it needs in a polling cycle over a single connection and, with a fast interval of 10 s or less, keeps that connection open between cycles (the panel drops idle connections after 15-30 s).
+
+Commands sent from Home Assistant (arm/disarm, scenarios, zone exclusion, alarm reset) reuse the same kept connection and leave it open when they succeed, so the new state appears after about 1 second instead of waiting for a new connection. A connection idle for more than 12 s is reopened before a command; any error closes it.
 
 While Home Assistant holds the connection, other local clients — for example installer programming software — cannot connect. Disable the integration or set the fast interval above 10 s before a local programming session. On the reference installation the INIM mobile app (cloud) kept working.
 

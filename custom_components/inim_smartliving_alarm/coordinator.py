@@ -45,6 +45,7 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # The panel drops idle connections after 15-30 s: keep the connection
         # open between cycles only when polling is comfortably faster.
         self._keep_alive = update_interval_seconds <= KEEP_ALIVE_MAX_INTERVAL
+        api_client.keep_connection_open = self._keep_alive
         # Light cycles read zones/areas/scenario; a full cycle also reads
         # exclusions, zone alarm memory and events, at most this often.
         self._slow_interval = entry.options.get(
