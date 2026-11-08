@@ -1997,6 +1997,54 @@ class InimAlarmAPI:
                 )
             return cfg
 
+    # Output state bits in the live memory block read by get_outputs_status().
+    # Found on a SmartLiving 10100 (firmware 6.09) by toggling each output from
+    # the INIM app and reading the whole live memory before and after: every
+    # bit followed its output and returned to the original value. The panel
+    # keeps a second identical copy 16 bytes later (0x0755 / 0x0760).
+    # Bit set = output active.
+    OUTPUT_STATUS_BITS = {
+        "oc1": (0x10, 0x20),  # 0x0750 bit 5
+        "oc2": (0x10, 0x40),  # 0x0750 bit 6
+        "expansion_1_t1": (0x05, 0x04),  # 0x0745 bit 2: expansion 1 terminal T1 as output
+    }
+    OUTPUT_STATUS_LENGTH = 0x20
+
+    def _outputs_status_address(self) -> int | None:
+        profile = getattr(self, "panel_profile", None) or {}
+        address = profile.get("outputs_status_address")
+        return int(address) if address is not None else None
+
+    def get_outputs_status(self) -> dict[str, Any] | None:
+        """Read output states (OC1, OC2, expansion 1 T1) from live memory.
+
+        Read-only. Only panels whose profile defines ``outputs_status_address``
+        (SmartLiving 10100) are read; others return None without a command.
+        """
+        address = self._outputs_status_address()
+        if address is None:
+            return None
+        length = self.OUTPUT_STATUS_LENGTH
+        frame = f"000000{address:04x}{length:04x}"
+        response_data_hex = self._send_command_core(
+            frame + self.calculate_checksum(frame),
+            expect_specific_response_len=length + 1,
+        )
+        if not response_data_hex or len(response_data_hex) < length * 2:
+            return None
+        return self.parse_outputs_status(response_data_hex)
+
+    @classmethod
+    def parse_outputs_status(cls, response_data_hex: str) -> dict[str, Any]:
+        data = bytes.fromhex(response_data_hex[: cls.OUTPUT_STATUS_LENGTH * 2])
+        return {
+            "raw_hex_data": response_data_hex,
+            "outputs": {
+                key: bool(data[offset] & mask)
+                for key, (offset, mask) in cls.OUTPUT_STATUS_BITS.items()
+            },
+        }
+
     @staticmethod
     def _empty_live_status(error: str | None = None) -> dict[str, Any]:
         status: dict[str, Any] = {
@@ -2005,6 +2053,7 @@ class InimAlarmAPI:
             "zones_excluded_status": None,
             "zones_triggered_status": None,
             "active_scenario": None,
+            "outputs_status": None,
         }
         if error:
             status["error"] = error
@@ -2032,6 +2081,8 @@ class InimAlarmAPI:
                 ("zones_excluded_status", self.get_zones_excluded_status, "zones excluded status"),
                 ("zones_triggered_status", self.get_zones_triggered_status, "zones triggered status"),
             ]
+        if full and self._outputs_status_address() is not None:
+            reads.append(("outputs_status", self.get_outputs_status, "outputs status"))
         reads.append(("active_scenario", self.get_active_scenario, "active scenario"))
         try:
             for key, reader, label in reads:

@@ -63,6 +63,8 @@ PANEL_PROFILES: dict[str, dict[str, int | str]] = {
         "reader_names_start": 0x13B0,
         "keyboard_names_start": 0x1590,
         "scenario_names_start": 0x2350,
+        # Live memory block holding output states (see InimAlarmAPI.OUTPUT_STATUS_BITS).
+        "outputs_status_address": 0x0740,
     },
 }
 
