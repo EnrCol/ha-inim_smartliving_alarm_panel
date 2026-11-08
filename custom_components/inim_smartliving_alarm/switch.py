@@ -43,6 +43,9 @@ from .panel_profiles import PANEL_MODEL_10100
 
 _LOGGER = logging.getLogger(__name__)
 
+# Fallback only, used when the terminal table could not be read from the panel
+# at setup (see panel_profiles.build_zone_command_indexes). These are the
+# indexes of the reference installation: other installations differ.
 # SmartLiving 10100/10100L command index map confirmed by field scans on the
 # test panel. Live 0x2002 state uses zone_id directly, but write command 0x2009
 # uses a physical/logical terminal command index with gaps for expansions,
@@ -150,11 +153,25 @@ async def async_setup_entry(
             # bitmask, but write command 0x2009 uses a physical/logical command
             # index. Only expose switches for named zones with a known, field-
             # confirmed command index.
+            panel_indexes = (initial_panel_config.get("zone_command_indexes") or {}).get(
+                "zone_command_indexes"
+            )
+            if panel_indexes:
+                zone_command_index_map = {int(z): int(i) for z, i in panel_indexes.items()}
+                index_mode = "panel_terminal_table"
+            else:
+                zone_command_index_map = SMARTLIVING_10100_ZONE_COMMAND_INDEX_MAP
+                index_mode = "built_in_map"
+                _LOGGER.warning(
+                    "Zone exclusion command indexes not read from the panel; using the "
+                    "built-in map of the reference installation. Refresh the initial "
+                    "panel config to read them."
+                )
             created_10100_zone_switches = 0
             skipped_empty_zone_names = 0
             skipped_without_command_index = 0
             _LOGGER.debug(
-                "Setting up SmartLiving 10100/10100L zone exclusion switches using field-confirmed command indices "
+                "Setting up SmartLiving 10100/10100L zone exclusion switches using the panel terminal table "
                 "(Limit: %s, Available: %s)",
                 limit_zones,
                 len(all_zone_names),
@@ -169,13 +186,11 @@ async def async_setup_entry(
                     skipped_empty_zone_names += 1
                     continue
 
-                command_index = SMARTLIVING_10100_ZONE_COMMAND_INDEX_MAP.get(
-                    zone_id_1_based
-                )
+                command_index = zone_command_index_map.get(zone_id_1_based)
                 if command_index is None:
                     skipped_without_command_index += 1
                     _LOGGER.info(
-                        "Skipping SmartLiving 10100/10100L zone switch for Zone %s (%s): no field-confirmed command index yet",
+                        "Skipping SmartLiving 10100/10100L zone switch for Zone %s (%s): no exclusion command index (no input terminal)",
                         zone_id_1_based,
                         display_zone_name,
                     )
@@ -191,13 +206,13 @@ async def async_setup_entry(
                         zone_id_1_based,
                         display_zone_name,
                         command_index,
-                        "smartliving_10100_field_map",
+                        index_mode,
                     )
                 )
                 created_10100_zone_switches += 1
 
             _LOGGER.info(
-                "Added %s SmartLiving 10100/10100L zone exclusion switches for %s using field-confirmed command indices; "
+                "Added %s SmartLiving 10100/10100L zone exclusion switches for %s; "
                 "skipped %s empty zone-name slots and %s named zones without command index",
                 created_10100_zone_switches,
                 entry.title,

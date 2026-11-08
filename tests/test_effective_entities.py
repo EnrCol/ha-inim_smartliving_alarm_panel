@@ -248,3 +248,38 @@ def test_area_count_rule(limit_areas, max_areas, expected):
     entry = SimpleNamespace(options=options, data={})
     _configure_active_scenario_mask(api, entry)
     assert api.active_scenario_area_count == expected
+
+
+# Terminal tables read from the reference SmartLiving 10100 (firmware 6.09).
+REFERENCE_TERMINAL_TABLE = bytes.fromhex(
+    "000102030405060708090a" + "ff" * 24 + "0b0c0d" + "ffff" + "1b1c1d1e1f" + "ff" * 85
+)
+
+
+def _reference_terminal_types():
+    input_rec = bytes.fromhex("0112121200000410385b7db4")
+    output_rec = bytes.fromhex("0400000000000410385b7db4")
+    records = [output_rec] + [bytes.fromhex("0100000000000410385b7db4")] * 2
+    records += [output_rec if t == 10 else input_rec for t in range(130)]
+    return b"".join(records)
+
+
+def test_terminal_table_reproduces_field_confirmed_indexes():
+    from custom_components.inim_smartliving_alarm.panel_profiles import build_zone_command_indexes
+    from custom_components.inim_smartliving_alarm.switch import SMARTLIVING_10100_ZONE_COMMAND_INDEX_MAP
+
+    assert len(REFERENCE_TERMINAL_TABLE) == 130
+    indexes, output_zones = build_zone_command_indexes(
+        REFERENCE_TERMINAL_TABLE, _reference_terminal_types()
+    )
+    assert indexes == SMARTLIVING_10100_ZONE_COMMAND_INDEX_MAP
+    assert output_zones == [11]  # expansion 1 T1 programmed as an output
+
+
+def test_terminal_table_without_type_table_keeps_every_assigned_terminal():
+    from custom_components.inim_smartliving_alarm.panel_profiles import build_zone_command_indexes
+
+    indexes, output_zones = build_zone_command_indexes(REFERENCE_TERMINAL_TABLE)
+    assert indexes[11] == 10
+    assert output_zones == []
+    assert len(indexes) == 19
