@@ -29,7 +29,7 @@ jobs:
       - name: Install Home Assistant test harness
         run: python -m pip install homeassistant pytest
       - name: Effective entity, scenario mapping and API logging tests
-        run: python -m pytest -q tests/test_effective_entities.py tests/test_inim_api_logging.py
+        run: python -m pytest -q tests/test_effective_entities.py tests/test_inim_api_logging.py tests/test_diagnostics_autodetect.py
 
   hassfest:
     runs-on: ubuntu-latest

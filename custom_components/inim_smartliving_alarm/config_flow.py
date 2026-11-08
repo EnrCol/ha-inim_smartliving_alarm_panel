@@ -49,7 +49,11 @@ from .effective_entities import build_automatic_options, effective_indexes
 from .inim_api import InimAlarmAPI
 from .panel_profiles import (
     PANEL_MODEL_10100,
+    PANEL_MODEL_AUTO,
     PANEL_MODEL_OPTIONS,
+    PANEL_MODEL_SETUP_OPTIONS,
+    detect_panel_model,
+    read_panel_system_info,
     apply_panel_profile_api_patches,
     configure_api_for_panel,
     get_panel_profile,
@@ -79,6 +83,24 @@ async def _validate_connection_and_fetch_initial_config(
     """Validate connection details by fetching initial panel configuration."""
 
     api = InimAlarmAPI(host=host, port=port, pin_code_str=pin)
+    detected_model: str | None = None
+    if panel_model == PANEL_MODEL_AUTO:
+        system_info = await hass.async_add_executor_job(read_panel_system_info, api)
+        if system_info is None:
+            raise ConnectionError("Failed to read the panel system info.")
+        detected_model = detect_panel_model(system_info.get("type"))
+        if detected_model is None:
+            _LOGGER.warning(
+                "Unknown INIM panel type %r: using the %s profile",
+                system_info.get("type"),
+                DEFAULT_PANEL_MODEL,
+            )
+        panel_model = detected_model or DEFAULT_PANEL_MODEL
+        _LOGGER.info(
+            "INIM panel type %r detected: using profile %s",
+            system_info.get("type"),
+            panel_model,
+        )
     configure_api_for_panel(api, panel_model)
 
     _LOGGER.debug(
@@ -142,6 +164,7 @@ async def _validate_connection_and_fetch_initial_config(
         host,
         port,
     )
+    initial_config["resolved_panel_model"] = panel_model
     return initial_config
 
 
@@ -210,6 +233,11 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         user_input.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
                     )
                 )
+                # "auto" is stored as the concrete profile it resolved to.
+                user_input[CONF_PANEL_MODEL] = initial_panel_config.pop(
+                    "resolved_panel_model",
+                    user_input.get(CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL),
+                )
                 self._flow_data[DATA_INITIAL_PANEL_CONFIG] = initial_panel_config
                 _LOGGER.info(
                     "Inim Alarm connection validated for %s", user_input[CONF_HOST]
@@ -268,9 +296,9 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_PANEL_MODEL,
                     default=self._flow_data.get("user_input_step1", {}).get(
-                        CONF_PANEL_MODEL, DEFAULT_PANEL_MODEL
+                        CONF_PANEL_MODEL, PANEL_MODEL_AUTO
                     ),
-                ): vol.In(PANEL_MODEL_OPTIONS),
+                ): vol.In(PANEL_MODEL_SETUP_OPTIONS),
                 vol.Optional(
                     CONF_PANEL_NAME,
                     default=self._flow_data.get("user_input_step1", {}).get(
@@ -476,6 +504,7 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                         new_pin,
                         new_panel_model,
                     )
+                    refreshed_config.pop("resolved_panel_model", None)
                     new_data[CONF_PIN] = new_pin
                     new_data[CONF_PANEL_MODEL] = new_panel_model
                     new_data[DATA_INITIAL_PANEL_CONFIG] = refreshed_config
