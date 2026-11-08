@@ -21,7 +21,7 @@ from .const import (
 from .inim_api import InimAlarmAPI
 
 KEEP_ALIVE_MAX_INTERVAL = 10  # seconds
-SLOW_STATUS_KEYS = ("zones_excluded_status", "zones_triggered_status")
+SLOW_STATUS_KEYS = ("zones_excluded_status", "zones_triggered_status", "outputs_status")
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class InimDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     for key in SLOW_STATUS_KEYS
                 }
             else:
-                # Keep the last exclusion / alarm-memory values between full reads.
+                # Keep the last exclusion / alarm-memory / output values between full reads.
                 status_data.update(self._slow_data)
             current_data.update(status_data)
 

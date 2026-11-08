@@ -301,3 +301,83 @@ def test_end_of_scenario_event_is_decoded(monkeypatch):
     event = api._fetch_one_compact_event("00", "01")
     assert event["action_description"] == "End of Scenario Activated"
     assert event["scenario_number_0_indexed"] == 3
+
+
+# Live block at 0x0740 captured from the reference SmartLiving 10100 with the
+# panel disarmed: SIRENA INT (OC1) active, TAPPARELLE (OC2) and expansion 1 T1 off.
+OUTPUTS_BASE_HEX = (
+    "00000000000000000000000000000000"
+    "20000000000000000000000000000000"
+)
+
+
+def _outputs_hex(byte_05=0x00, byte_10=0x20):
+    data = bytearray(bytes.fromhex(OUTPUTS_BASE_HEX))
+    data[0x05] = byte_05
+    data[0x10] = byte_10
+    return data.hex()
+
+
+def test_outputs_status_parsing_follows_reference_captures():
+    parse = InimAlarmAPI.parse_outputs_status
+    assert parse(_outputs_hex())["outputs"] == {"oc1": True, "oc2": False, "expansion_1_t1": False}
+    # OC1 switched off from the app
+    assert parse(_outputs_hex(byte_10=0x00))["outputs"]["oc1"] is False
+    # OC2 switched on from the app (OC1 still on)
+    assert parse(_outputs_hex(byte_10=0x60))["outputs"] == {"oc1": True, "oc2": True, "expansion_1_t1": False}
+    # NOTTE scenario: OC1 off, OC2 on, sectional door output (exp. 1 T1) active
+    assert parse(_outputs_hex(byte_05=0x04, byte_10=0x40))["outputs"] == {
+        "oc1": False, "oc2": True, "expansion_1_t1": True,
+    }
+
+
+def test_outputs_read_only_on_full_cycle_with_profile(monkeypatch):
+    from custom_components.inim_smartliving_alarm.panel_profiles import (
+        PANEL_MODEL_10100,
+        configure_api_for_panel,
+    )
+
+    _count_sockets(monkeypatch)
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    configure_api_for_panel(api, PANEL_MODEL_10100)
+    _stub_status(monkeypatch, api)
+    commands = []
+
+    def send(cmd, **kw):
+        commands.append(cmd)
+        if cmd.startswith("0000000740"):
+            assert kw["expect_specific_response_len"] == 0x21
+            return _outputs_hex(byte_05=0x04)
+        return "0200"
+
+    monkeypatch.setattr(api, "_send_command_core", send)
+
+    light = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True, full=False)
+    assert light["outputs_status"] is None
+    assert not any(c.startswith("0000000740") for c in commands)
+
+    full = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+    assert full["errors"] == []
+    assert full["outputs_status"]["outputs"] == {"oc1": True, "oc2": False, "expansion_1_t1": True}
+    read = [c for c in commands if c.startswith("0000000740")]
+    assert read == ["00000007400020" + api.calculate_checksum("00000007400020")]
+
+
+def test_outputs_not_read_without_profile_address(monkeypatch):
+    from custom_components.inim_smartliving_alarm.panel_profiles import (
+        PANEL_MODEL_1050,
+        configure_api_for_panel,
+    )
+
+    _count_sockets(monkeypatch)
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    configure_api_for_panel(api, PANEL_MODEL_1050)
+    _stub_status(monkeypatch, api)
+    commands = []
+    monkeypatch.setattr(api, "_send_command_core", lambda cmd, **kw: commands.append(cmd) or "0200")
+
+    result = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+
+    assert result["errors"] == []
+    assert result["outputs_status"] is None
+    assert not any(c.startswith("0000000740") for c in commands)
