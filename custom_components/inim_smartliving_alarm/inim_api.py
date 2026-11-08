@@ -210,6 +210,7 @@ class InimAlarmConstants:
     }
     EVENT_ACTION_CODES_COMPACT: dict[int, str] = {
         0x9E: "Scenario Activated",
+        0x1E: "End of Scenario Activated",
         0x80: "Area/Zone Alarm",
         0x00: "Area/Zone Alarm End",
         0x8A: "Area(s) Armed",
@@ -258,6 +259,10 @@ class InimAlarmAPI:
         # Areas evaluated by the active-scenario read; None keeps the legacy
         # fixed command (mask 0x007F, areas 1-7).
         self.active_scenario_area_count: int | None = None
+        # Set by the coordinator when it polls fast enough to keep the
+        # connection open; commands then reuse it and leave it open.
+        self.keep_connection_open = False
+        self._last_io: float = 0.0
 
         # Use provided system_max_areas or default from constants
         self.system_max_areas = (
@@ -1479,7 +1484,7 @@ class InimAlarmAPI:
                 event_data["affected_areas"] = self._decode_area_mask(d1_val, d2_val)
                 event_data["device_id_hex"] = format(d4_val, "02x")
                 event_data["authorized_id_hex"] = format(d3_val, "02x")
-            elif action_code == 0x9E:
+            elif action_code in (0x9E, 0x1E):
                 event_data["scenario_number_0_indexed"] = d3_val
             elif action_code in [0x80, 0x00, 0x85, 0x05]:
                 event_data["affected_areas"] = self._decode_area_mask(d1_val, d2_val)
@@ -2073,6 +2078,11 @@ class InimAlarmAPI:
         only; no exclusions, alarm memory or events ("events_result" is None).
         """
         with self._api_lock:
+            if (
+                self._is_connected
+                and time.monotonic() - self._last_io > self.KEPT_CONNECTION_MAX_IDLE
+            ):
+                self.disconnect()
             reused = self._is_connected
             if not self.connect():
                 logger.error("Failed to connect to panel for polling cycle.")
@@ -2119,12 +2129,40 @@ class InimAlarmAPI:
                 )
                 return result
             finally:
-                if not (keep_alive and healthy):
+                if keep_alive and healthy:
+                    self._last_io = time.monotonic()
+                else:
                     self.disconnect()
 
     def close(self) -> None:
         """Close a kept-alive connection (on unload)."""
         with self._api_lock:
+            self.disconnect()
+
+    # A kept connection idle longer than this is reopened before a command
+    # instead of risking a write to a socket the panel already dropped
+    # (the panel drops idle connections after 15-30 s).
+    KEPT_CONNECTION_MAX_IDLE = 12.0
+
+    def _connect_for_command(self) -> bool:
+        """Connect for a command, reusing a recently used kept connection."""
+        if (
+            self._is_connected
+            and time.monotonic() - self._last_io > self.KEPT_CONNECTION_MAX_IDLE
+        ):
+            self.disconnect()
+        return self.connect()
+
+    def _release_connection(self, healthy: bool) -> None:
+        """Keep the connection for the next cycle only if healthy and wanted.
+
+        Closing after every command made the panel delay the post-command
+        read by about 2 s, so the new state reached Home Assistant only
+        after about 3.5 s.
+        """
+        if self.keep_connection_open and healthy:
+            self._last_io = time.monotonic()
+        else:
             self.disconnect()
 
     def execute_arm_disarm_areas(self, areas_to_arm=None, areas_to_disarm=None):
@@ -2133,7 +2171,7 @@ class InimAlarmAPI:
         with self._api_lock:  # Acquire the lock for the duration of this operation
             logger.debug("Lock acquired for execute_arm_disarm_areas")
 
-            if not self.connect():
+            if not self._connect_for_command():
                 logger.error("Failed to connect to panel for arm/disarm operation.")
                 return False
 
@@ -2146,7 +2184,7 @@ class InimAlarmAPI:
                 logger.error("Exception during execute_arm_disarm_areas: %s", e)
                 success = False  # Ensure success is false on exception
             finally:
-                self.disconnect()
+                self._release_connection(success)
             return success
 
     def execute_reset_area_alarm(self, area_number_1_indexed):
@@ -2154,7 +2192,7 @@ class InimAlarmAPI:
         with self._api_lock:
             logger.debug("Lock acquired for execute_reset_area_alarm")
 
-            if not self.connect():
+            if not self._connect_for_command():
                 logger.error(
                     "Failed to connect to panel for reset area alarm operation."
                 )
@@ -2167,14 +2205,14 @@ class InimAlarmAPI:
                 logger.error("Exception during execute_reset_area_alarm: %s", e)
                 success = False
             finally:
-                self.disconnect()
+                self._release_connection(success)
             return success
 
     def execute_set_zone_excluded_status(self, zone_internal_index, excluded_status):
         """Connects, sets the excluded status for a zone, then disconnects. Returns success status."""
         with self._api_lock:
             logger.debug("Lock acquired for execute_set_zone_excluded_status")
-            if not self.connect():
+            if not self._connect_for_command():
                 logger.error(
                     "Failed to connect to panel for set zone excluded operation."
                 )
@@ -2189,7 +2227,7 @@ class InimAlarmAPI:
                 logger.error("Exception during execute_set_zone_excluded_status: %s", e)
                 success = False
             finally:
-                self.disconnect()
+                self._release_connection(success)
             return success
 
     def execute_activate_scenario(self, scenario_number_0_indexed):
@@ -2216,13 +2254,14 @@ class InimAlarmAPI:
                 )
                 return False
 
-            if not self.connect():
+            if not self._connect_for_command():
                 logger.error(
                     f"execute_activate_scenario: Failed to connect to panel for activating scenario {scenario_number_0_indexed}."
                 )
                 return False
 
             overall_success = False
+            is_allowed = None
             try:
                 # Step 1: Call the low-level check method
                 logger.info(
@@ -2270,7 +2309,9 @@ class InimAlarmAPI:
                 )
                 overall_success = False  # Ensure success is false on any exception
             finally:
-                self.disconnect()  # Always disconnect
+                # Keep a healthy connection for the post-command read; a
+                # refused activation is a valid exchange too.
+                self._release_connection(overall_success or is_allowed is False)
 
             return overall_success
 

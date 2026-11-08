@@ -244,3 +244,60 @@ def test_full_read_scheduling(monkeypatch):
     now[0] = 1001.0
     c._force_full_read = True  # set by async_request_refresh after a command
     assert c._full_read_due()
+
+
+def _poll_then(monkeypatch, keep, command_ok=True):
+    opened = _count_sockets(monkeypatch)
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    api.keep_connection_open = keep
+    _stub_status(monkeypatch, api)
+    monkeypatch.setattr(api, "set_zone_excluded_status", lambda *a: command_ok)
+    api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=keep)
+    return api, opened
+
+
+def test_command_reuses_kept_connection_and_leaves_it_open(monkeypatch):
+    api, opened = _poll_then(monkeypatch, keep=True)
+    assert api.execute_set_zone_excluded_status(4, True) is True
+    assert api._is_connected
+    api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+    assert len(opened) == 1
+
+
+def test_failed_command_closes_kept_connection(monkeypatch):
+    api, opened = _poll_then(monkeypatch, keep=True, command_ok=False)
+    assert api.execute_set_zone_excluded_status(4, True) is False
+    assert not api._is_connected
+
+
+def test_idle_kept_connection_is_reopened_before_command(monkeypatch):
+    api, opened = _poll_then(monkeypatch, keep=True)
+    api._last_io -= api.KEPT_CONNECTION_MAX_IDLE + 1
+    assert api.execute_set_zone_excluded_status(4, True) is True
+    assert len(opened) == 2
+
+
+def test_command_closes_connection_without_keep_alive(monkeypatch):
+    api, opened = _poll_then(monkeypatch, keep=False)
+    assert not api._is_connected
+    assert api.execute_set_zone_excluded_status(4, True) is True
+    assert not api._is_connected
+
+
+def test_refused_scenario_keeps_connection(monkeypatch):
+    api, opened = _poll_then(monkeypatch, keep=True)
+    monkeypatch.setattr(api, "check_scenario_activation_allowed", lambda **kw: False)
+    assert api.execute_activate_scenario(1) is False
+    assert api._is_connected
+    monkeypatch.setattr(api, "check_scenario_activation_allowed", lambda **kw: None)
+    assert api.execute_activate_scenario(1) is False
+    assert not api._is_connected
+
+
+def test_end_of_scenario_event_is_decoded(monkeypatch):
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    # Real frame from a SmartLiving 10100: scenario 3 ended on disarm.
+    monkeypatch.setattr(api, "_send_command_core", lambda *a, **kw: "4d508332010003001e")
+    event = api._fetch_one_compact_event("00", "01")
+    assert event["action_description"] == "End of Scenario Activated"
+    assert event["scenario_number_0_indexed"] == 3
