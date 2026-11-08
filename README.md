@@ -8,7 +8,7 @@ Home Assistant Integration for Inim SmartLiving Alarm Systems
 
 [![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=EnrCol&repository=ha-inim_smartliving_alarm_panel&category=integration)
 
-**Beta v0.3.4b7.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
+**Beta v0.3.4b8.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
 
 **Validation scope:** field tests and protocol verification are available only on SmartLiving **10100** (firmware 6.09); 505/515 and 1050/1050L must not be described as hardware-validated. The automatic 10100 entity-import changes in this beta are pending a new real-installation soak test. Never treat a beta as a replacement for the official security system.
 
@@ -129,10 +129,12 @@ After installation and restart:
    * **Host**: the IP address of the SmartLAN module.
    * **Port**: the SmartLAN TCP port, usually `5004`.
    * **PIN**: a valid panel PIN.
-   * **Panel Model**: select the correct profile:
+   * **Panel Model**: leave `Automatic (detected from the panel)` (default): the integration reads the type the panel reports (`10100` → SmartLiving 10100 / 10100L profile; `1050`, `515`, `505` → 1050-compatible profile) and stores that profile. You can still pick one explicitly:
 
      * `SmartLiving 1050 / 1050L compatible`
      * `SmartLiving 10100 / 10100L`
+
+     If the selected profile does not match the type the panel reports, a warning is logged at startup.
 
    * **Panel Name**: friendly Home Assistant name for the panel.
 
@@ -253,6 +255,16 @@ For example, on a correctly configured SmartLiving 10100 profile:
 ### Event log
 
 Use `sensor.your_panel_name_event_log` to show recent panel events. A custom table card can make this easier to read in Lovelace.
+
+Helping support other panels
+----------------------------
+
+Only a SmartLiving 10100 (firmware 6.09) has been checked on hardware. Memory positions differ between models and firmware, so support for other panels is built from data sent by their owners:
+
+1. In Home Assistant open **Settings** → **Devices & Services** → **Inim Smartliving Alarm** → ⋮ → **Download diagnostics**. It takes about 30-60 seconds and polling pauses meanwhile.
+2. The file contains the entry settings without PIN and host, the live state and a read-only copy of the panel memory (configuration and names). Before the file is built, the user/installer code tables, telephone numbers and every occurrence of the configured PIN are overwritten.
+3. Zone, area, scenario and user **names** are kept, because they are needed to find the tables. Check the file before attaching it to a public issue; if you prefer, send it privately.
+4. Open an issue with the file, the panel model and firmware, and a short description of the installation (which terminals are zones or outputs). An export of the INIM installer software programming is also very useful.
 
 Troubleshooting
 ---------------
