@@ -8,7 +8,7 @@ Home Assistant Integration for Inim SmartLiving Alarm Systems
 
 [![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=EnrCol&repository=ha-inim_smartliving_alarm_panel&category=integration)
 
-**Beta v0.3.4b6.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
+**Beta v0.3.4b7.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
 
 **Validation scope:** field tests and protocol verification are available only on SmartLiving **10100** (firmware 6.09); 505/515 and 1050/1050L must not be described as hardware-validated. The automatic 10100 entity-import changes in this beta are pending a new real-installation soak test. Never treat a beta as a replacement for the official security system.
 
@@ -85,6 +85,10 @@ This avoids common shifted-name symptoms such as:
 * first zones appearing as `AREA 011`, `AREA 012`, etc.;
 * scenario names appearing as readers or keyboards;
 * active scenario `TOTALE` being shown as a reader name.
+
+### SmartLiving 10100 / 10100L zone exclusion
+
+The exclusion command does not use the zone number but the panel terminal that the zone is wired to. At setup the integration reads the panel's terminal table (configuration memory `0xCF75`, 130 bytes) and builds the zone → command index map from it, so zone exclusion switches match each installation's wiring. Terminals programmed as outputs (type table at `0x9252`) get no exclusion switch, because the panel refuses to exclude them. If the table cannot be read, the built-in map of the reference installation is used and a warning is logged.
 
 Prerequisites
 -------------

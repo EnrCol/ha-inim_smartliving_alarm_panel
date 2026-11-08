@@ -381,3 +381,41 @@ def test_outputs_not_read_without_profile_address(monkeypatch):
     assert result["errors"] == []
     assert result["outputs_status"] is None
     assert not any(c.startswith("0000000740") for c in commands)
+
+
+def test_zone_command_indexes_read_from_config_memory(monkeypatch):
+    from custom_components.inim_smartliving_alarm import panel_profiles as pp
+    from test_effective_entities import REFERENCE_TERMINAL_TABLE, _reference_terminal_types
+
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    pp.configure_api_for_panel(api, pp.PANEL_MODEL_10100)
+    memory = {0xCF75: REFERENCE_TERMINAL_TABLE, 0x9252: _reference_terminal_types()}
+    frames = []
+
+    def send(cmd, expect_specific_response_len):
+        frames.append(cmd)
+        assert cmd[:6] == "000001"  # configuration bank
+        address, length = int(cmd[6:10], 16), int(cmd[10:14], 16)
+        assert expect_specific_response_len == length + 1
+        for base, blob in memory.items():
+            if base <= address < base + len(blob):
+                return blob[address - base : address - base + length].hex()
+        return None
+
+    monkeypatch.setattr(api, "_send_command_core", send)
+    result = pp._profile_get_zone_command_indexes(api)
+
+    assert "11" not in result["zone_command_indexes"]
+    assert result["zone_command_indexes"]["12"] == 35
+    assert result["output_zones"] == [11]
+    assert frames[0].startswith("000001cf750082")
+    assert len(frames) == 1 + 7  # 130-byte table + 1596-byte type table in 250-byte chunks
+
+
+def test_zone_command_indexes_not_read_on_1050_profile(monkeypatch):
+    from custom_components.inim_smartliving_alarm import panel_profiles as pp
+
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    pp.configure_api_for_panel(api, pp.PANEL_MODEL_1050)
+    monkeypatch.setattr(api, "_send_command_core", lambda *a, **kw: (_ for _ in ()).throw(AssertionError))
+    assert pp._profile_get_zone_command_indexes(api) is None

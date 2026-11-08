@@ -65,6 +65,11 @@ PANEL_PROFILES: dict[str, dict[str, int | str]] = {
         "scenario_names_start": 0x2350,
         # Live memory block holding output states (see InimAlarmAPI.OUTPUT_STATUS_BITS).
         "outputs_status_address": 0x0740,
+        # Configuration memory: terminal -> zone table read at setup to build the
+        # zone exclusion command indexes (see build_zone_command_indexes).
+        "terminal_zone_table_address": 0xCF75,
+        "terminal_count": 130,
+        "terminal_type_table_address": 0x9252,
     },
 }
 
@@ -128,6 +133,100 @@ def _read_memory_range(self: InimAlarmAPI, start_address: int, total_length: int
         remaining -= chunk_len
 
     return "".join(data_parts)
+
+
+TERMINAL_TYPE_RECORD_SIZE = 12
+# The first three records of the terminal type table precede terminal 0.
+TERMINAL_TYPE_RECORD_OFFSET = 3
+# Type byte of a terminal programmed as an output. Seen only once on the
+# reference panel (expansion 1 T1, programmed as a home-automation output,
+# refused by the zone exclusion command), so it is used only to HIDE a switch.
+TERMINAL_TYPE_OUTPUT = 0x04
+
+
+def build_zone_command_indexes(
+    terminal_table: bytes, terminal_types: bytes | None = None
+) -> tuple[dict[int, int], list[int]]:
+    """Map zone number (1-based) -> zone exclusion command index.
+
+    ``terminal_table`` has one byte per terminal: the position is the index
+    used by the exclusion command 0x2009, the value is zone - 1 (0xFF = free).
+    Terminals are numbered: central T1-T10 = 0-9, then expansion n terminal t
+    = 10 + 5 (n - 1) + (t - 1). Verified on a SmartLiving 10100 firmware 6.09:
+    the table reproduces all 18 field-confirmed indexes.
+
+    ``terminal_types`` is the type table (12-byte records); terminals whose
+    type byte is TERMINAL_TYPE_OUTPUT are skipped and returned separately.
+    """
+    indexes: dict[int, int] = {}
+    output_zones: list[int] = []
+    for command_index, value in enumerate(terminal_table):
+        if value == 0xFF:
+            continue
+        zone = value + 1
+        record = (TERMINAL_TYPE_RECORD_OFFSET + command_index) * TERMINAL_TYPE_RECORD_SIZE
+        if terminal_types is not None and record < len(terminal_types):
+            if terminal_types[record] == TERMINAL_TYPE_OUTPUT:
+                output_zones.append(zone)
+                continue
+        indexes.setdefault(zone, command_index)
+    return indexes, output_zones
+
+
+def _read_config_memory_range(self: InimAlarmAPI, start_address: int, total_length: int) -> str | None:
+    """Read configuration memory (bank 00 01) in panel-sized chunks."""
+    parts: list[str] = []
+    address = start_address
+    remaining = total_length
+    while remaining > 0:
+        chunk = min(remaining, MAX_MEMORY_READ_DATA_BYTES)
+        frame = f"000001{address:04x}{chunk:04x}"
+        data = self._send_command_core(
+            frame + self.calculate_checksum(frame), expect_specific_response_len=chunk + 1
+        )
+        if not data or len(data) < chunk * 2:
+            _LOGGER.error("Failed to read config memory at 0x%04X length 0x%04X", address, chunk)
+            return None
+        parts.append(data[: chunk * 2])
+        address += chunk
+        remaining -= chunk
+    return "".join(parts)
+
+
+def _profile_get_zone_command_indexes(self: InimAlarmAPI) -> dict[str, Any] | None:
+    """Read the terminal tables and build the zone exclusion command indexes."""
+    profile = getattr(self, "panel_profile", None) or {}
+    table_address = profile.get("terminal_zone_table_address")
+    if table_address is None:
+        return None
+    count = int(profile["terminal_count"])
+    table_hex = _read_config_memory_range(self, int(table_address), count)
+    if table_hex is None:
+        return None
+    types: bytes | None = None
+    types_address = profile.get("terminal_type_table_address")
+    if types_address is not None:
+        types_hex = _read_config_memory_range(
+            self,
+            int(types_address),
+            (TERMINAL_TYPE_RECORD_OFFSET + count) * TERMINAL_TYPE_RECORD_SIZE,
+        )
+        if types_hex is None:
+            _LOGGER.warning("Terminal type table not read; output terminals are not filtered")
+        else:
+            types = bytes.fromhex(types_hex)
+    indexes, output_zones = build_zone_command_indexes(bytes.fromhex(table_hex), types)
+    _LOGGER.info(
+        "Zone exclusion command indexes read from the panel: %s (output terminals skipped: %s)",
+        indexes,
+        output_zones,
+    )
+    # String keys: the config entry is stored as JSON.
+    return {
+        "zone_command_indexes": {str(zone): index for zone, index in indexes.items()},
+        "output_zones": output_zones,
+        "terminal_table_hex": table_hex,
+    }
 
 
 def _decode_fixed_names(data_hex: str, count: int) -> list[str]:
@@ -349,6 +448,8 @@ def _profile_get_initial_panel_configuration(self: InimAlarmAPI):
                 ("keyboard_names", self.get_keyboard_names),
                 ("reader_names", self.get_reader_names),
             ]
+            if (getattr(self, "panel_profile", None) or {}).get("terminal_zone_table_address") is not None:
+                methods_to_call.append(("zone_command_indexes", self.get_zone_command_indexes))
             for key, method in methods_to_call:
                 _LOGGER.debug("Fetching %s...", key)
                 cfg[key] = method()
@@ -379,5 +480,6 @@ def apply_panel_profile_api_patches() -> None:
     InimAlarmAPI.get_reader_names = _profile_get_reader_names
     InimAlarmAPI.get_scenarios = _profile_get_scenarios
     InimAlarmAPI.get_areas_status = _profile_get_areas_status
+    InimAlarmAPI.get_zone_command_indexes = _profile_get_zone_command_indexes
     InimAlarmAPI.get_scenario_activations = _profile_get_scenario_activations
     InimAlarmAPI.get_initial_panel_configuration = _profile_get_initial_panel_configuration
