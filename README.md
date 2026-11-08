@@ -8,7 +8,7 @@ Home Assistant Integration for Inim SmartLiving Alarm Systems
 
 [![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=EnrCol&repository=ha-inim_smartliving_alarm_panel&category=integration)
 
-**Beta v0.3.4b5.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
+**Beta v0.3.4b6.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
 
 **Validation scope:** field tests and protocol verification are available only on SmartLiving **10100** (firmware 6.09); 505/515 and 1050/1050L must not be described as hardware-validated. The automatic 10100 entity-import changes in this beta are pending a new real-installation soak test. Never treat a beta as a replacement for the official security system.
 
@@ -210,6 +210,14 @@ Entity IDs are generated from the configured panel name and the names fetched fr
 
   * `button.your_panel_name_scenario_X`
   * `binary_sensor.your_panel_name_scenario_X_active`
+
+* **Outputs** (SmartLiving 10100 / 10100L only, read-only)
+
+  * `binary_sensor.your_panel_name_output_oc1`
+  * `binary_sensor.your_panel_name_output_oc2`
+  * `binary_sensor.your_panel_name_output_expansion_1_t1`
+
+  On = output active. Read during slow polling cycles. Outputs cannot be switched from Home Assistant yet: the activation command is not known.
 
 * **Sensors**
 
