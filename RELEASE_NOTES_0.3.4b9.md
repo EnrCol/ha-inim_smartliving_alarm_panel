@@ -23,7 +23,7 @@ Unofficial prerelease, based on v0.3.4b8.
 - Reference SmartLiving 10100 firmware 6.09:
   - output command with the owner present: OC2 off and on (index 2), panel result `00`, nothing else changed;
   - isolated Home Assistant TEST, upgrade from an entry made with b7: initial config refreshed automatically (revision 5), same 18 zone exclusion indexes, terminal 10 recognised as output from the official record, old output sensors removed, switches SIRENA INT / TAPPARELLE / SEZIONALE with the panel names and the right state;
-  - TAPPARELLE switched off and on from Home Assistant, state updated within 3 s;
+  - TAPPARELLE (OC2) and SEZIONALE (expansion 1 T1, terminal output, index 10) switched off and on from Home Assistant, panel result OK, state updated within 4 s;
   - Reconfigure with the integration running: panel read again, entry reloaded with the same entities;
   - RAM pointers `0x4014`-`0x4029` read: all match the name offsets found by hand.
 
