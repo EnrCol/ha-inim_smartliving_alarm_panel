@@ -37,7 +37,6 @@ from .const import (
     KEY_INIT_ZONES_CONFIG_DETAILED,
     KEY_LIVE_AREA_STATUSES_MAP,
     KEY_LIVE_AREAS_STATUS,
-    KEY_LIVE_OUTPUTS_STATUS,
     KEY_LIVE_ZONE_TRIGGERED_STATUSES_MAP,
     KEY_LIVE_ZONES_TRIGGERED_STATUS,
 )
@@ -107,15 +106,6 @@ async def async_setup_entry(
             all_area_names, limit_areas,
         )
     ]
-
-    if panel_model == PANEL_MODEL_10100:
-        for output_key, output_name in OUTPUT_SENSORS:
-            binary_sensors_to_add.append(
-                InimOutputBinarySensor(
-                    coordinator, entry, panel_display_name, system_info,
-                    output_key, output_name,
-                )
-            )
 
     num_zones_to_consider = min(len(all_zone_names), limit_zones)
     if panel_model == PANEL_MODEL_10100:
@@ -283,50 +273,6 @@ class InimAnyAreaArmedBinarySensor(BaseInimBinarySensor):
             if self._attr_is_on is False
             else "mdi:shield-question"
         )
-
-
-OUTPUT_SENSORS = (
-    ("oc1", "Output OC1"),
-    ("oc2", "Output OC2"),
-    ("expansion_1_t1", "Output Expansion 1 T1"),
-)
-
-
-class InimOutputBinarySensor(BaseInimBinarySensor):
-    """Read-only state of a panel output (on = output active).
-
-    Read during full (slow) polling cycles; between them the last value is
-    kept. Unknown until the first full read succeeds.
-    """
-
-    def __init__(
-        self,
-        coordinator: Any,
-        config_entry: ConfigEntry,
-        panel_display_name: str,
-        system_info: dict[str, Any],
-        output_key: str,
-        output_name: str,
-    ) -> None:
-        super().__init__(coordinator, config_entry, panel_display_name, system_info)
-        self._output_key = output_key
-        self._attr_name = output_name
-        self._attr_unique_id = f"{config_entry.entry_id}_output_{output_key}"
-        self._update_state_from_coordinator()
-
-    @property
-    def suggested_object_id(self) -> str | None:
-        return f"{self._panel_display_name}_output_{self._output_key}"
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self._update_state_from_coordinator()
-        self.async_write_ha_state()
-
-    def _update_state_from_coordinator(self) -> None:
-        data = self.coordinator.data or {}
-        outputs = (data.get(KEY_LIVE_OUTPUTS_STATUS) or {}).get("outputs") or {}
-        self._attr_is_on = outputs.get(self._output_key)
 
 
 class InimZoneBinarySensor(BaseInimBinarySensor):

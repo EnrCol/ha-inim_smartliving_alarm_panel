@@ -71,7 +71,7 @@ DATA_INITIAL_PANEL_CONFIG_REVISION = "initial_panel_config_revision"
 
 # Bump this whenever profile memory offsets or initial static panel data parsing changes.
 # Existing entries with an older/missing revision will refresh initial_panel_config on startup/options.
-INITIAL_PANEL_CONFIG_REVISION = 4
+INITIAL_PANEL_CONFIG_REVISION = 5
 
 # Static configuration fetched by config_flow (e.g., zone names, scenario names)
 # will be stored in entry.data and entry.options by the config_flow itself.

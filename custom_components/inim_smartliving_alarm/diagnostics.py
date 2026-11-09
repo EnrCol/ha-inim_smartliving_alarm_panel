@@ -190,6 +190,8 @@ async def async_get_config_entry_diagnostics(
             "system_info": initial.get("system_info"),
             "panel_model": getattr(api, "panel_model", None),
             "zone_command_indexes": initial.get("zone_command_indexes"),
+            "outputs": initial.get("outputs"),
+            "hardware": getattr(api, "panel_hardware_key", None),
         },
         "live_data": coordinator.data if coordinator else None,
         "memory": memory,

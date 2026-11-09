@@ -1,4 +1,4 @@
-"""Platform for switch entities for the Inim Alarm integration (Areas and Zones)."""
+"""Platform for switch entities for the Inim Alarm integration (areas, zones, outputs)."""
 
 import functools
 import logging
@@ -35,6 +35,7 @@ from .const import (
     KEY_INIT_ZONES_CONFIG_DETAILED,
     KEY_LIVE_AREA_STATUSES_MAP,
     KEY_LIVE_AREAS_STATUS,
+    KEY_LIVE_OUTPUTS_STATUS,
     KEY_LIVE_ZONE_EXCLUDED_STATUSES_MAP,
     KEY_LIVE_ZONES_EXCLUDED_STATUS,
 )
@@ -274,6 +275,14 @@ async def async_setup_entry(
                         skipped_without_internal_index,
                         entry.title,
                     )
+
+    # --- Output switches (relay, OC1, OC2 and terminals programmed as outputs) ---
+    for output in initial_panel_config.get("outputs") or []:
+        switches_to_add.append(
+            InimOutputSwitch(
+                coordinator, api_client, entry, panel_display_name, system_info, output
+            )
+        )
 
     if switches_to_add:
         async_add_entities(switches_to_add)
@@ -522,3 +531,75 @@ class InimZoneEnabledSwitch(CoordinatorEntity, SwitchEntity):
             "command_index": self._zone_command_index,
             "command_index_mode": self._zone_command_index_mode,
         }
+
+
+class InimOutputSwitch(CoordinatorEntity, SwitchEntity):
+    """A panel output (relay, OC1, OC2 or a terminal programmed as output).
+
+    The state is read in full polling cycles and right after a command. The
+    relay is disabled by default: it usually drives the main siren.
+    """
+
+    _attr_icon = "mdi:electric-switch"
+
+    def __init__(
+        self,
+        coordinator: Any,
+        api_client: InimAlarmAPI,
+        config_entry: ConfigEntry,
+        panel_display_name: str,
+        system_info: dict[str, Any],
+        output: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self.api_client = api_client
+        self.config_entry = config_entry
+        self._panel_display_name = panel_display_name
+        self._system_info = system_info
+        self._key = output["key"]
+        self._index = int(output["index"])
+        self._bit = int(output["bit"])
+        self._output_name = output["name"]
+        self._attr_name = f"{panel_display_name} Output {self._output_name}"
+        self._attr_unique_id = f"{config_entry.entry_id}_output_switch_{self._key}"
+        self._attr_entity_registry_enabled_default = self._key != "fixed_0"
+        self._update_state_from_coordinator()
+
+    @property
+    def suggested_object_id(self) -> str | None:
+        return f"{self._panel_display_name}_output_{self._key}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.config_entry.entry_id)},
+            name=self._panel_display_name,
+            manufacturer="Inim Electronics",
+            model=self._system_info.get(KEY_INIT_SYSTEM_INFO_TYPE, "SmartLiving"),
+            sw_version=self._system_info.get(KEY_INIT_SYSTEM_INFO_VERSION, "Unknown"),
+        )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_state_from_coordinator()
+        self.async_write_ha_state()
+
+    def _update_state_from_coordinator(self) -> None:
+        status = (self.coordinator.data or {}).get(KEY_LIVE_OUTPUTS_STATUS)
+        self._attr_is_on = None if status is None else self._bit in status.get("active_bits", [])
+
+    async def _async_set(self, state: int) -> None:
+        _LOGGER.info("Setting output %s (index %s) to %s", self._output_name, self._index, state)
+        func = functools.partial(self.api_client.execute_set_output, self._index, state)
+        if await self.hass.async_add_executor_job(func):
+            await self.coordinator.async_request_refresh()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._async_set(1)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._async_set(0)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"output_name": self._output_name, "command_index": self._index}

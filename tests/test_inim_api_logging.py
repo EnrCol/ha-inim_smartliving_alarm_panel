@@ -305,91 +305,91 @@ def test_end_of_scenario_event_is_decoded(monkeypatch):
 
 # Live block at 0x0740 captured from the reference SmartLiving 10100 with the
 # panel disarmed: SIRENA INT (OC1) active, TAPPARELLE (OC2) and expansion 1 T1 off.
-OUTPUTS_BASE_HEX = (
-    "00000000000000000000000000000000"
-    "20000000000000000000000000000000"
-)
-
-
-def _outputs_hex(byte_05=0x00, byte_10=0x20):
-    data = bytearray(bytes.fromhex(OUTPUTS_BASE_HEX))
-    data[0x05] = byte_05
-    data[0x10] = byte_10
+def _register_2003(active_bits, logical_terminals=100):
+    """Output state register 0x2003 as read on the reference 10100 (len 0x40)."""
+    base, length = InimAlarmAPI.output_state_layout(logical_terminals)
+    data = bytearray(0x40)
+    for k in active_bits:
+        data[base + k // 8] |= 1 << (k % 8)
     return data.hex()
 
 
-def test_outputs_status_parsing_follows_reference_captures():
-    parse = InimAlarmAPI.parse_outputs_status
-    assert parse(_outputs_hex())["outputs"] == {"oc1": True, "oc2": False, "expansion_1_t1": False}
-    # OC1 switched off from the app
-    assert parse(_outputs_hex(byte_10=0x00))["outputs"]["oc1"] is False
-    # OC2 switched on from the app (OC1 still on)
-    assert parse(_outputs_hex(byte_10=0x60))["outputs"] == {"oc1": True, "oc2": True, "expansion_1_t1": False}
-    # NOTTE scenario: OC1 off, OC2 on, sectional door output (exp. 1 T1) active
-    assert parse(_outputs_hex(byte_05=0x04, byte_10=0x40))["outputs"] == {
-        "oc1": False, "oc2": True, "expansion_1_t1": True,
-    }
+def test_output_state_layout_per_model():
+    layout = InimAlarmAPI.output_state_layout
+    assert layout(100) == (39, 52)  # 10100: verified (OC2 = byte 51 bit 6)
+    assert layout(50) == (20, 27)
+    assert layout(20) == (9, 12)
+    assert layout(10) == (5, 7)
 
 
-def test_outputs_read_only_on_full_cycle_with_profile(monkeypatch):
-    from custom_components.inim_smartliving_alarm.panel_profiles import (
-        PANEL_MODEL_10100,
-        configure_api_for_panel,
-    )
-
-    _count_sockets(monkeypatch)
-    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
-    configure_api_for_panel(api, PANEL_MODEL_10100)
-    _stub_status(monkeypatch, api)
-    commands = []
-
-    def send(cmd, **kw):
-        commands.append(cmd)
-        if cmd.startswith("0000000740"):
-            assert kw["expect_specific_response_len"] == 0x21
-            return _outputs_hex(byte_05=0x04)
-        return "0200"
-
-    monkeypatch.setattr(api, "_send_command_core", send)
-
-    light = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True, full=False)
-    assert light["outputs_status"] is None
-    assert not any(c.startswith("0000000740") for c in commands)
-
-    full = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
-    assert full["errors"] == []
-    assert full["outputs_status"]["outputs"] == {"oc1": True, "oc2": False, "expansion_1_t1": True}
-    read = [c for c in commands if c.startswith("0000000740")]
-    assert read == ["00000007400020" + api.calculate_checksum("00000007400020")]
+def test_outputs_status_parsing_follows_reference_reads():
+    # 09/11 test on the reference 10100: register 0x2003 byte 40 = 0x04
+    # (expansion 1 T1, logical terminal 10), byte 51 = 0x60 (OC1 + OC2).
+    data = bytearray(0x40)
+    data[40], data[51] = 0x04, 0x60
+    assert InimAlarmAPI.parse_outputs_status(data.hex(), 100)["active_bits"] == [10, 101, 102]
+    data[51] = 0x20  # OC2 switched off with the output command
+    assert InimAlarmAPI.parse_outputs_status(data.hex(), 100)["active_bits"] == [10, 101]
 
 
-def test_outputs_not_read_without_profile_address(monkeypatch):
+def test_outputs_read_only_on_full_cycle(monkeypatch):
     from custom_components.inim_smartliving_alarm.panel_profiles import (
         PANEL_MODEL_1050,
         configure_api_for_panel,
+        configure_api_hardware,
     )
 
     _count_sockets(monkeypatch)
     api = InimAlarmAPI("127.0.0.1", 5004, "1234")
     configure_api_for_panel(api, PANEL_MODEL_1050)
+    configure_api_hardware(api, {"type": "00515"})
     _stub_status(monkeypatch, api)
     commands = []
-    monkeypatch.setattr(api, "_send_command_core", lambda cmd, **kw: commands.append(cmd) or "0200")
 
-    result = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+    def send(cmd, **kw):
+        commands.append(cmd)
+        if cmd.startswith("0000002003000c"):
+            assert kw["expect_specific_response_len"] == 13
+            return _register_2003([3, 21], logical_terminals=20)[:24] + "00"
+        return "0200"
 
-    assert result["errors"] == []
-    assert result["outputs_status"] is None
-    assert not any(c.startswith("0000000740") for c in commands)
+    monkeypatch.setattr(api, "_send_command_core", send)
+    light = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True, full=False)
+    assert light["outputs_status"] is None
+    full = api.execute_poll_cycle(last_processed_compact_event_index_val=0x920D, keep_alive=True)
+    assert full["errors"] == []
+    assert full["outputs_status"]["active_bits"] == [3, 21]  # terminal 3, OC1
+
+
+def test_set_output_frame_and_result(monkeypatch):
+    api = InimAlarmAPI("127.0.0.1", 5004, "1234")
+    sent = []
+    monkeypatch.setattr(api, "_send_raw_command", sent.append)
+    payload = "01020304ffff" + "0200"
+    monkeypatch.setattr(api, "_read_raw_response", lambda buffer_size: api.calculate_checksum(payload))
+    monkeypatch.setattr(api, "_check_last_command_execution_status", lambda: {"status": "success"})
+    assert api.set_output(2, 0) is True
+    head = "0100002007" + "0008"
+    assert sent == [head + api.calculate_checksum(head) + payload]
+
+
+def _reference_terminal_records():
+    """Terminal records (12 bytes per logical terminal) of the reference 10100."""
+    records = [bytes.fromhex("10385b7db402121212000000")] * 9
+    records.append(bytes.fromhex("10385b7db402000000000000"))
+    records.append(bytes.fromhex("10385b7db401000000000001"))  # T1 of expansion 1: output
+    records += [bytes.fromhex("10385b7db401000000000000")] * 89
+    return b"".join(records)
 
 
 def test_zone_command_indexes_read_from_config_memory(monkeypatch):
     from custom_components.inim_smartliving_alarm import panel_profiles as pp
-    from test_effective_entities import REFERENCE_TERMINAL_TABLE, _reference_terminal_types
+    from test_effective_entities import REFERENCE_TERMINAL_TABLE
 
     api = InimAlarmAPI("127.0.0.1", 5004, "1234")
     pp.configure_api_for_panel(api, pp.PANEL_MODEL_10100)
-    memory = {0xCF75: REFERENCE_TERMINAL_TABLE, 0x9252: _reference_terminal_types()}
+    table = REFERENCE_TERMINAL_TABLE + b"\xff" * (240 - len(REFERENCE_TERMINAL_TABLE))
+    memory = {0xCF75: table, 0x90CD: _reference_terminal_records()}
     frames = []
 
     def send(cmd, expect_specific_response_len):
@@ -408,17 +408,62 @@ def test_zone_command_indexes_read_from_config_memory(monkeypatch):
     assert "11" not in result["zone_command_indexes"]
     assert result["zone_command_indexes"]["12"] == 35
     assert result["output_zones"] == [11]
-    assert frames[0].startswith("000001cf750082")
-    assert len(frames) == 1 + 7  # 130-byte table + 1596-byte type table in 250-byte chunks
+    assert result["output_terminals"] == {"11": 10}
+    assert frames[0].startswith("000001cf7500f0")  # 240 physical terminals
 
 
-def test_zone_command_indexes_not_read_on_1050_profile(monkeypatch):
+def test_output_list_fixed_and_terminal_outputs():
+    from custom_components.inim_smartliving_alarm.panel_profiles import build_output_list
+
+    names = [""] * 11
+    names[10] = "SEZIONALE"
+    outputs = build_output_list(100, ["RELE'", "SIRENA INT", "TAPPARELLE"], {11: 10, 2: 1}, names)
+    assert outputs == [
+        {"key": "fixed_0", "index": 0, "bit": 100, "name": "RELE'"},
+        {"key": "fixed_1", "index": 1, "bit": 101, "name": "SIRENA INT"},
+        {"key": "fixed_2", "index": 2, "bit": 102, "name": "TAPPARELLE"},
+        {"key": "terminal_10", "index": 10, "bit": 10, "name": "SEZIONALE"},
+    ]  # zone 2 on physical index 1 left out: same index as OC1
+    assert build_output_list(50, None, {}, [])[1]["name"] == "OC1"
+
+
+def test_hardware_key_from_reported_type():
+    from custom_components.inim_smartliving_alarm.panel_profiles import hardware_key
+
+    assert hardware_key("10100") == "10100"
+    assert hardware_key("01050") == "1050"
+    assert hardware_key("00515") == "515"
+    assert hardware_key("00505") == "505"
+    assert hardware_key(None, "smartliving_10100") == "10100"
+    assert hardware_key("Unknown") == "1050"
+
+
+def test_names_read_at_panel_pointer_and_capped_by_next_table(monkeypatch):
     from custom_components.inim_smartliving_alarm import panel_profiles as pp
 
     api = InimAlarmAPI("127.0.0.1", 5004, "1234")
     pp.configure_api_for_panel(api, pp.PANEL_MODEL_1050)
-    monkeypatch.setattr(api, "_send_command_core", lambda *a, **kw: (_ for _ in ()).throw(AssertionError))
-    assert pp._profile_get_zone_command_indexes(api) is None
+    # Pointer block as read on the reference 10100 (RAM 0x4014-0x4029).
+    block = bytes.fromhex("0000f000700db013901580160019602250233025a026")
+    names_bank = {0x0000: b"".join(n.ljust(16).encode() for n in ["CASA", "GARAGE"] + ["X"] * 13)}
+    reads = []
+
+    def send(cmd, expect_specific_response_len):
+        reads.append(cmd[:14])
+        if cmd.startswith("0000004014"):
+            return block.hex() + "00"
+        address, length = int(cmd[6:10], 16), int(cmd[10:14], 16)
+        assert cmd.startswith("000101")
+        blob = names_bank[0x0000]
+        return blob[address : address + length].hex()
+
+    monkeypatch.setattr(api, "_send_command_core", send)
+    api.name_pointers = pp._read_name_pointers(api)
+    assert api.name_pointers["tables"]["zone_names_start"] == 0x00F0
+    assert api.name_pointers["tables"]["output_names_start"] == 0x26A0
+    result = pp._profile_get_areas(api)
+    assert result["names"][:2] == ["CASA", "GARAGE"]
+    assert len(result["names"]) == 10  # 1050 profile: 10 areas (room before zones: 15)
 
 
 # --- diagnostics and model auto-detection ---
