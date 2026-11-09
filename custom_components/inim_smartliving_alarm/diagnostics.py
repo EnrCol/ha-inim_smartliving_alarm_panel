@@ -35,6 +35,10 @@ MEMORY_BLOCKS: tuple[tuple[str, str, int, int], ...] = (
     ("names", "0101", 0x0000, 0x4000),
     ("live_0700", "0000", 0x0700, 0x0100),
     ("live_2000", "0000", 0x2000, 0x0100),
+    # System info string and the name table pointers (0x4014-0x4029).
+    ("live_4000", "0000", 0x4000, 0x0040),
+    # Output state register read as the integration reads it on a 10100.
+    ("register_2003", "0000", 0x2003, 0x0040),
 )
 CHUNK = 250
 REDACTED_BYTE = 0xEE
@@ -192,6 +196,7 @@ async def async_get_config_entry_diagnostics(
             "zone_command_indexes": initial.get("zone_command_indexes"),
             "outputs": initial.get("outputs"),
             "hardware": getattr(api, "panel_hardware_key", None),
+            "name_pointers": initial.get("name_pointers"),
         },
         "live_data": coordinator.data if coordinator else None,
         "memory": memory,
