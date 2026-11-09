@@ -256,30 +256,21 @@ REFERENCE_TERMINAL_TABLE = bytes.fromhex(
 )
 
 
-def _reference_terminal_types():
-    input_rec = bytes.fromhex("0112121200000410385b7db4")
-    output_rec = bytes.fromhex("0400000000000410385b7db4")
-    records = [output_rec] + [bytes.fromhex("0100000000000410385b7db4")] * 2
-    records += [output_rec if t == 10 else input_rec for t in range(130)]
-    return b"".join(records)
-
-
 def test_terminal_table_reproduces_field_confirmed_indexes():
     from custom_components.inim_smartliving_alarm.panel_profiles import build_zone_command_indexes
     from custom_components.inim_smartliving_alarm.switch import SMARTLIVING_10100_ZONE_COMMAND_INDEX_MAP
 
     assert len(REFERENCE_TERMINAL_TABLE) == 130
-    indexes, output_zones = build_zone_command_indexes(
-        REFERENCE_TERMINAL_TABLE, _reference_terminal_types()
-    )
+    types = bytes([0] * 10 + [1] + [0] * 89)  # logical terminal 10 = output
+    indexes, outputs = build_zone_command_indexes(REFERENCE_TERMINAL_TABLE, types)
     assert indexes == SMARTLIVING_10100_ZONE_COMMAND_INDEX_MAP
-    assert output_zones == [11]  # expansion 1 T1 programmed as an output
+    assert outputs == {11: 10}  # expansion 1 T1 programmed as an output
 
 
 def test_terminal_table_without_type_table_keeps_every_assigned_terminal():
     from custom_components.inim_smartliving_alarm.panel_profiles import build_zone_command_indexes
 
-    indexes, output_zones = build_zone_command_indexes(REFERENCE_TERMINAL_TABLE)
+    indexes, outputs = build_zone_command_indexes(REFERENCE_TERMINAL_TABLE)
     assert indexes[11] == 10
-    assert output_zones == []
+    assert outputs == {}
     assert len(indexes) == 19

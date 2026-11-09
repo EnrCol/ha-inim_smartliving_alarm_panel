@@ -1,5 +1,6 @@
 """Config flow for Inim Alarm integration."""
 
+import asyncio
 import logging
 from typing import Any
 
@@ -311,6 +312,75 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user", data_schema=user_data_schema, errors=errors
         )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Change host, port, PIN or panel model and read the panel again.
+
+        For installations made with an older version: the panel configuration
+        (names, model, terminal tables, outputs) is read again with the current
+        code, without removing the integration. An empty PIN keeps the stored one.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            pin = user_input.get(CONF_PIN) or entry.data[CONF_PIN]
+            # The panel accepts one connection at a time: release the running one.
+            was_loaded = entry.state is config_entries.ConfigEntryState.LOADED
+            if was_loaded:
+                await self.hass.config_entries.async_unload(entry.entry_id)
+                await asyncio.sleep(2.5)  # the SmartLAN delays a connection after a close
+            try:
+                initial_config = await _validate_connection_and_fetch_initial_config(
+                    self.hass,
+                    user_input[CONF_HOST],
+                    user_input[CONF_PORT],
+                    pin,
+                    user_input.get(CONF_PANEL_MODEL, PANEL_MODEL_AUTO),
+                )
+            except ConnectionError:
+                errors["base"] = "cannot_connect"
+            except ValueError as vex:
+                errors["base"] = (
+                    str(vex)
+                    if str(vex) in ["auth_failed", "invalid_panel_response"]
+                    else "unknown"
+                )
+            except Exception:  # never leave the integration unloaded
+                _LOGGER.exception("Unexpected error while reconfiguring %s", entry.title)
+                errors["base"] = "unknown"
+            if errors and was_loaded:
+                await self.hass.config_entries.async_setup(entry.entry_id)
+            if not errors:
+                panel_model = initial_config.pop("resolved_panel_model")
+                options = dict(entry.options)
+                options.pop(CONF_PANEL_MODEL, None)
+                return self.async_update_reload_and_abort(
+                    entry,
+                    unique_id=f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}",
+                    data_updates={
+                        CONF_HOST: user_input[CONF_HOST],
+                        CONF_PORT: user_input[CONF_PORT],
+                        CONF_PIN: pin,
+                        CONF_PANEL_MODEL: panel_model,
+                        DATA_INITIAL_PANEL_CONFIG: initial_config,
+                        DATA_INITIAL_PANEL_CONFIG_REVISION: INITIAL_PANEL_CONFIG_REVISION,
+                    },
+                    options=options,
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_HOST, default=entry.data[CONF_HOST]): str,
+                vol.Required(CONF_PORT, default=entry.data[CONF_PORT]): cv.port,
+                vol.Optional(CONF_PIN, default=""): str,
+                vol.Optional(CONF_PANEL_MODEL, default=PANEL_MODEL_AUTO): vol.In(
+                    PANEL_MODEL_SETUP_OPTIONS
+                ),
+            }
+        )
+        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
 
     async def async_step_initial_options(
         self, user_input: dict[str, Any] | None = None

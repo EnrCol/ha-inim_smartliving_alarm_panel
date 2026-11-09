@@ -68,27 +68,22 @@ The integration keeps a 1050-compatible profile as the default, then applies lar
 | SmartLiving 1050 / 1050L compatible | 10 | 50 | 30 | 10 | 20 | Default compatibility profile. |
 | SmartLiving 10100 / 10100L | 15 | 100 | 30 | 15 | 30 | Tested with profile-specific name offsets. |
 
-### SmartLiving 10100 / 10100L name map
+### Names
 
-For the 10100 profile, static names are read from explicit panel-memory offsets:
+The panel publishes in RAM (`0x4014`-`0x4029`) a pointer to each table of names: areas, zones, readers, keyboards, scenarios and fixed outputs. The integration reads the names at those addresses, so they are right on any model and firmware, and limits each table to the room before the next one (no phantom areas or zones). The technique comes from [matteoraf#18](https://github.com/matteoraf/ha-inim_smartliving_alarm_panel/pull/18), tested there on a SmartLiving 515; on the reference 10100 every pointer matches the address found by hand (areas `0x0000`, zones `0x00F0`, readers `0x13B0`, keyboards `0x1590`, scenarios `0x2350`, outputs `0x26A0`). If a pointer cannot be read or its names are not text, the fixed address of the selected profile is used.
 
-| Data block | Offset |
-| --- | ---: |
-| Area names | `0x0000` |
-| Zone names | `0x00F0` |
-| Reader names | `0x13B0` |
-| Keyboard names | `0x1590` |
-| Scenario names | `0x2350` |
+### Terminals, zone exclusion and outputs
 
-This avoids common shifted-name symptoms such as:
+The zone exclusion and output commands do not use the zone number but the physical terminal it is wired to. At setup the integration reads, at the addresses of the INIM installer software memory map for the model the panel reports, the terminal table (physical terminal → logical terminal) and the terminal programming (type of each logical terminal):
 
-* first zones appearing as `AREA 011`, `AREA 012`, etc.;
-* scenario names appearing as readers or keyboards;
-* active scenario `TOTALE` being shown as a reader name.
+| Model | Logical terminals | Terminal table | Terminal records |
+| --- | ---: | ---: | ---: |
+| 505 | 10 | `0x3DE0` (40) | `0x2971` |
+| 515 | 20 | `0x4595` (70) | `0x306F` |
+| 1050 | 50 | `0x78FD` (130) | `0x57D4` |
+| 10100 | 100 | `0xCF75` (240) | `0x90CD` |
 
-### SmartLiving 10100 / 10100L zone exclusion
-
-The exclusion command does not use the zone number but the panel terminal that the zone is wired to. At setup the integration reads the panel's terminal table (configuration memory `0xCF75`, 130 bytes) and builds the zone → command index map from it, so zone exclusion switches match each installation's wiring. Terminals programmed as outputs (type table at `0x9252`) get no exclusion switch, because the panel refuses to exclude them. If the table cannot be read, the built-in map of the reference installation is used and a warning is logged.
+Terminals programmed as outputs get an output switch instead of a zone exclusion switch (the panel refuses to exclude them). On the 10100 the exclusion switches use this table; if it cannot be read, the built-in map of the reference installation is used and a warning is logged. 505/515/1050 keep the original exclusion indexes until the table is confirmed on one of them.
 
 Prerequisites
 -------------
@@ -179,6 +174,10 @@ While Home Assistant holds the connection, other local clients — for example i
 
 The options form never shows the stored PIN; leave the PIN field empty to keep it.
 
+### Reconfigure
+
+*Settings → Devices & services → INIM → ⋮ → Reconfigure* changes host, port, PIN or panel model and reads the panel again with the installed version, without removing the integration (use it after upgrading from an older version, or when the panel IP changes). An empty PIN keeps the stored one; the model defaults to automatic. Polling pauses for the few seconds of the read.
+
 ### Refresh initial panel config
 
 The options screen includes a **Refresh Initial Panel Config** checkbox.
@@ -217,13 +216,13 @@ Entity IDs are generated from the configured panel name and the names fetched fr
   * `button.your_panel_name_scenario_X`
   * `binary_sensor.your_panel_name_scenario_X_active`
 
-* **Outputs** (SmartLiving 10100 / 10100L only, read-only)
+* **Outputs** (all models)
 
-  * `binary_sensor.your_panel_name_output_oc1`
-  * `binary_sensor.your_panel_name_output_oc2`
-  * `binary_sensor.your_panel_name_output_expansion_1_t1`
+  * `switch.your_panel_name_output_fixed_0` (relay, disabled by default: it usually drives the main siren)
+  * `switch.your_panel_name_output_fixed_1` (OC1), `switch.your_panel_name_output_fixed_2` (OC2)
+  * `switch.your_panel_name_output_terminal_N`: one per terminal programmed as an output (N = logical terminal = zone - 1)
 
-  On = output active. Read during slow polling cycles. Outputs cannot be switched from Home Assistant yet: the activation command is not known.
+  Named after the panel programming. The state is read in slow polling cycles and right after a command. The panel refuses the command if the PIN is not allowed to drive that output. Terminal outputs on control panel terminals T1-T3 are not exposed: their command index is the same as relay/OC1/OC2.
 
 * **Sensors**
 

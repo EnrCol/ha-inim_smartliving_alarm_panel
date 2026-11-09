@@ -74,7 +74,9 @@ def _check_scenario_activation_allowed_10100(
 
     response_data_hex = self._send_command_core(
         eight_byte_cmd_with_checksum,
-        expect_specific_response_len=spec_info["resp_len"],
+        expect_specific_response_len=(getattr(self, "panel_hardware", None) or {}).get(
+            "precheck_response_len", spec_info["resp_len"]
+        ),
     )
 
     if response_data_hex is None:

@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     CONF_HOST,
@@ -37,6 +38,7 @@ from .panel_profiles import (
     PANEL_MODEL_10100,
     apply_panel_profile_api_patches,
     configure_api_for_panel,
+    configure_api_hardware,
     detect_panel_model,
 )
 from .smartliving_10100 import apply_smartliving_10100_precheck_fix
@@ -210,6 +212,18 @@ def _warn_if_profile_mismatch(entry: ConfigEntry, panel_model: str) -> None:
         )
 
 
+def _remove_old_output_sensors(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove the read-only output sensors of 0.3.4b6-b8, replaced by output switches."""
+    registry = er.async_get(hass)
+    for key in ("oc1", "oc2", "expansion_1_t1"):
+        entity_id = registry.async_get_entity_id(
+            "binary_sensor", DOMAIN, f"{entry.entry_id}_output_{key}"
+        )
+        if entity_id:
+            registry.async_remove(entity_id)
+            _LOGGER.info("Removed %s: replaced by the output switches", entity_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Inim Alarm from a config entry."""
     _LOGGER.info(
@@ -243,6 +257,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _apply_automatic_10100_runtime_options(entry, panel_model)
     _configure_active_scenario_mask(api, entry)
     _warn_if_profile_mismatch(entry, panel_model)
+    configure_api_hardware(
+        api, (entry.data.get(DATA_INITIAL_PANEL_CONFIG) or {}).get("system_info")
+    )
+    _remove_old_output_sensors(hass, entry)
 
     # Create the custom coordinator instance
     coordinator_name = f"{DOMAIN} data ({entry.title})"

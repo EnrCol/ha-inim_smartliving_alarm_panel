@@ -185,6 +185,8 @@ class InimAlarmConstants:
     # Area status/action constants
     AREA_STATUS_DISARMED = "4"
     AREA_STATUS_ARMED = "1"
+    # 1 total, 2 partial, 3 instant (no delays): all armed (matteoraf#14).
+    AREA_ARMED_STATUSES = ("1", "2", "3")
     AREA_ACTION_DISARM = "4"
     AREA_ACTION_ARM = "1"
     AREA_ACTION_KEEP_STATUS = "0"
@@ -1086,7 +1088,7 @@ class InimAlarmAPI:
                 if area_in_lsn <= self.system_max_areas:
                     statuses[area_in_lsn] = (
                         "armed"
-                        if status_char_lsn == InimAlarmConstants.AREA_STATUS_ARMED
+                        if status_char_lsn in InimAlarmConstants.AREA_ARMED_STATUSES
                         else "disarmed"
                         if status_char_lsn == InimAlarmConstants.AREA_STATUS_DISARMED
                         else "unknown"
@@ -1094,7 +1096,7 @@ class InimAlarmAPI:
                 if area_in_msn <= self.system_max_areas:
                     statuses[area_in_msn] = (
                         "armed"
-                        if status_char_msn == InimAlarmConstants.AREA_STATUS_ARMED
+                        if status_char_msn in InimAlarmConstants.AREA_ARMED_STATUSES
                         else "disarmed"
                         if status_char_msn == InimAlarmConstants.AREA_STATUS_DISARMED
                         else "unknown"
@@ -1997,53 +1999,71 @@ class InimAlarmAPI:
                 )
             return cfg
 
-    # Output state bits in the live memory block read by get_outputs_status().
-    # Found on a SmartLiving 10100 (firmware 6.09) by toggling each output from
-    # the INIM app and reading the whole live memory before and after: every
-    # bit followed its output and returned to the original value. The panel
-    # keeps a second identical copy 16 bytes later (0x0755 / 0x0760).
-    # Bit set = output active.
-    OUTPUT_STATUS_BITS = {
-        "oc1": (0x10, 0x20),  # 0x0750 bit 5
-        "oc2": (0x10, 0x40),  # 0x0750 bit 6
-        "expansion_1_t1": (0x05, 0x04),  # 0x0745 bit 2: expansion 1 terminal T1 as output
-    }
-    OUTPUT_STATUS_LENGTH = 0x20
+    # Output states: register 0x2003 read with a longer length, laid out as in
+    # the monitor of the INIM installer software. With L logical terminals the
+    # state bits start at byte base = 2L/8 + 1 + L/8 + 1 (integer divisions);
+    # bit n = logical terminal n, bit L + j = fixed output j (0 relay, 1 OC1,
+    # 2 OC2); bit k is in byte base + k/8, bit k%8. Verified on a SmartLiving
+    # 10100 (L = 100): OC1, OC2 and expansion 1 T1 followed the outputs.
+    FIXED_OUTPUTS = 3
+    OUTPUT_STATE_REGISTER = 0x2003
+    SET_OUTPUT_ADDRESS = 0x2007
 
-    def _outputs_status_address(self) -> int | None:
-        profile = getattr(self, "panel_profile", None) or {}
-        address = profile.get("outputs_status_address")
-        return int(address) if address is not None else None
+    @classmethod
+    def output_state_layout(cls, logical_terminals: int) -> tuple[int, int]:
+        """Return (first state byte, read length) for the output state register."""
+        base = 2 * logical_terminals // 8 + 1 + logical_terminals // 8 + 1
+        return base, base + (logical_terminals + cls.FIXED_OUTPUTS + 7) // 8
 
     def get_outputs_status(self) -> dict[str, Any] | None:
-        """Read output states (OC1, OC2, expansion 1 T1) from live memory.
-
-        Read-only. Only panels whose profile defines ``outputs_status_address``
-        (SmartLiving 10100) are read; others return None without a command.
-        """
-        address = self._outputs_status_address()
-        if address is None:
+        """Read the state of every output (fixed and terminal). Read-only."""
+        logical_terminals = getattr(self, "logical_terminals", None)
+        if not logical_terminals:
             return None
-        length = self.OUTPUT_STATUS_LENGTH
-        frame = f"000000{address:04x}{length:04x}"
+        _, length = self.output_state_layout(logical_terminals)
+        frame = f"000000{self.OUTPUT_STATE_REGISTER:04x}{length:04x}"
         response_data_hex = self._send_command_core(
             frame + self.calculate_checksum(frame),
             expect_specific_response_len=length + 1,
         )
         if not response_data_hex or len(response_data_hex) < length * 2:
             return None
-        return self.parse_outputs_status(response_data_hex)
+        return self.parse_outputs_status(response_data_hex, logical_terminals)
 
     @classmethod
-    def parse_outputs_status(cls, response_data_hex: str) -> dict[str, Any]:
-        data = bytes.fromhex(response_data_hex[: cls.OUTPUT_STATUS_LENGTH * 2])
+    def parse_outputs_status(cls, response_data_hex: str, logical_terminals: int) -> dict[str, Any]:
+        base, length = cls.output_state_layout(logical_terminals)
+        bits = bytes.fromhex(response_data_hex[: length * 2])[base:]
         return {
             "raw_hex_data": response_data_hex,
-            "outputs": {
-                key: bool(data[offset] & mask)
-                for key, (offset, mask) in cls.OUTPUT_STATUS_BITS.items()
-            },
+            "active_bits": [
+                k
+                for k in range(logical_terminals + cls.FIXED_OUTPUTS)
+                if bits[k // 8] >> (k % 8) & 1
+            ],
         }
+
+    def set_output(self, output_index: int, state: int) -> bool:
+        """Switch an output on an open connection.
+
+        Write 8 bytes at 0x2007: PIN (6 bytes) + output index + state (0 off,
+        1 on). The panel acknowledges with the payload checksum; the result is
+        read from 0x2004. Verified on a SmartLiving 10100 (OC2 off/on).
+        """
+        if not (0 <= output_index <= 0xFF and 0 <= state <= 0xFF):
+            raise ValueError(f"Invalid output command {output_index}/{state}")
+        payload = self.pin_hex + f"{output_index:02x}{state:02x}"
+        head = f"010000{self.SET_OUTPUT_ADDRESS:04x}0008"
+        self._send_raw_command(head + self.calculate_checksum(head) + payload)
+        ack = self._read_raw_response(buffer_size=1)
+        if ack.lower() != self.calculate_checksum(payload).lower():
+            logger.error("Unexpected acknowledge to the output command: %s", ack)
+        status = self._check_last_command_execution_status()
+        if status["status"] == "success":
+            logger.info("Output %s set to %s", output_index, state)
+            return True
+        logger.error("Output %s command failed: %s", output_index, status["message"])
+        return False
 
     @staticmethod
     def _empty_live_status(error: str | None = None) -> dict[str, Any]:
@@ -2081,7 +2101,7 @@ class InimAlarmAPI:
                 ("zones_excluded_status", self.get_zones_excluded_status, "zones excluded status"),
                 ("zones_triggered_status", self.get_zones_triggered_status, "zones triggered status"),
             ]
-        if full and self._outputs_status_address() is not None:
+        if full and getattr(self, "logical_terminals", None):
             reads.append(("outputs_status", self.get_outputs_status, "outputs status"))
         reads.append(("active_scenario", self.get_active_scenario, "active scenario"))
         try:
@@ -2276,6 +2296,22 @@ class InimAlarmAPI:
                 )
             except Exception as e:
                 logger.error("Exception during execute_set_zone_excluded_status: %s", e)
+                success = False
+            finally:
+                self._release_connection(success)
+            return success
+
+    def execute_set_output(self, output_index: int, state: int) -> bool:
+        """Connect if needed, switch an output, release the connection."""
+        with self._api_lock:
+            if not self._connect_for_command():
+                logger.error("Failed to connect to panel for the output command.")
+                return False
+            success = False
+            try:
+                success = self.set_output(output_index, state)
+            except Exception as e:
+                logger.error("Exception during execute_set_output: %s", e)
                 success = False
             finally:
                 self._release_connection(success)
