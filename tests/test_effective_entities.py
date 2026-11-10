@@ -290,9 +290,10 @@ def test_custom_bypass_mapping_resolves_only_its_scenario():
 
 
 def test_scenario_kind():
-    assert scenario_kind({"area_actions": {"1": "disarm", "2": "disarm"}}) == "disarm"
-    assert scenario_kind({"area_actions": {"1": "arm", "2": "disarm"}}) == "arm"
-    assert scenario_kind(None) == "arm"
+    assert scenario_kind(0, "DISINSERITO", {"scenario_disarm": 0}) == "disarm"
+    assert scenario_kind(3, "TOTALE", {"scenario_disarm": 0}) == "arm"
+    assert scenario_kind(5, "Disinserito", {}) == "disarm"
+    assert scenario_kind(1, "Notte", {}) == "arm"
 
 
 def test_panel_summary_states_and_open_zones():

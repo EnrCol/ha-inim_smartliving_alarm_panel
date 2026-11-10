@@ -25,6 +25,7 @@ from .const import (
     CONF_LIMIT_SCENARIOS,
     CONF_LIMIT_ZONES,
     CONF_PANEL_NAME,
+    CONF_SCENARIO_DISARM,
     DATA_API_CLIENT,
     DATA_COORDINATOR,
     DATA_INITIAL_PANEL_CONFIG,
@@ -33,9 +34,6 @@ from .const import (
     DOMAIN,
     KEY_INIT_AREA_NAMES,
     KEY_INIT_AREAS,
-    KEY_INIT_SCENARIO_ACTIVATION_AREA_ACTIONS,
-    KEY_INIT_SCENARIO_ACTIVATION_INDEX,
-    KEY_INIT_SCENARIO_ACTIVATIONS,
     KEY_INIT_SCENARIO_NAMES,
     KEY_INIT_SCENARIOS,
     KEY_INIT_SYSTEM_INFO,
@@ -51,19 +49,26 @@ from .const import (
     KEY_LIVE_ZONE_STATUSES_MAP,
     KEY_LIVE_ZONES_STATUS,
 )
-from .effective_entities import effective_indexes
+from .effective_entities import effective_indexes, normalize_panel_name
 from .inim_api import InimAlarmAPI
 from .utils import async_handle_scenario_activation_failure
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def scenario_kind(activation: dict[str, Any] | None) -> str:
-    """Return "disarm" when a scenario only disarms areas, otherwise "arm"."""
-    actions = set(
-        ((activation or {}).get(KEY_INIT_SCENARIO_ACTIVATION_AREA_ACTIONS) or {}).values()
-    )
-    return "disarm" if "disarm" in actions and "arm" not in actions else "arm"
+_DISARM_NAMES = {"DISINSERITO", "DISINSERIMENTO", "DISARMATO", "DISARMO", "DISARMED", "DISARM"}
+
+
+def scenario_kind(index: int, name: str, options: dict[str, Any]) -> str:
+    """"disarm" for the scenario mapped to Disarm (or named like it), else "arm".
+
+    The per-area actions read from the panel are not reliable on every model,
+    so they are not used here.
+    """
+    mapped = options.get(CONF_SCENARIO_DISARM)
+    if mapped is not None:
+        return "disarm" if index == mapped else "arm"
+    return "disarm" if normalize_panel_name(name) in _DISARM_NAMES else "arm"
 
 
 def _by_number(mapping: dict[Any, Any] | None, number: int) -> Any:
@@ -132,16 +137,14 @@ async def async_setup_entry(
     limit = entry.options.get(
         CONF_LIMIT_SCENARIOS, entry.data.get(CONF_LIMIT_SCENARIOS, DEFAULT_LIMIT_SCENARIOS)
     )
-    activations = initial.get(KEY_INIT_SCENARIO_ACTIVATIONS) or []
-    scenarios = []
-    for index in effective_indexes(names, "scenario", limit):
-        activation = next(
-            (a for a in activations if a.get(KEY_INIT_SCENARIO_ACTIVATION_INDEX) == index),
-            None,
-        )
-        scenarios.append(
-            {"index": index, "name": names[index].strip(), "kind": scenario_kind(activation)}
-        )
+    scenarios = [
+        {
+            "index": index,
+            "name": names[index].strip(),
+            "kind": scenario_kind(index, names[index].strip(), entry.options),
+        }
+        for index in effective_indexes(names, "scenario", limit)
+    ]
     if not scenarios:
         _LOGGER.info("No programmed scenarios: scenario select not created")
         return
@@ -162,6 +165,7 @@ class InimScenarioSelect(CoordinatorEntity, SelectEntity):
     """Active scenario of the panel; selecting an option activates it."""
 
     _attr_icon = "mdi:shield-home"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -181,13 +185,9 @@ class InimScenarioSelect(CoordinatorEntity, SelectEntity):
         self._system_info = initial.get(KEY_INIT_SYSTEM_INFO) or {}
         self._area_names = (initial.get(KEY_INIT_AREAS) or {}).get(KEY_INIT_AREA_NAMES) or []
         self._zone_names = (initial.get(KEY_INIT_ZONES) or {}).get(KEY_INIT_ZONE_NAMES) or []
-        self._attr_name = f"{self._panel_name} Scenario"
+        self._attr_name = "Scenario"
         self._attr_unique_id = f"{entry.entry_id}_scenario_select"
         self._attr_options = [s["name"] for s in scenarios]
-
-    @property
-    def suggested_object_id(self) -> str | None:
-        return f"{self._panel_name}_scenario"
 
     @property
     def device_info(self) -> DeviceInfo:
