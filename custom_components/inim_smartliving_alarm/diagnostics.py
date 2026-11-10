@@ -8,7 +8,9 @@ any user can attach to an issue.
 Security: the PIN is removed from the entry data, and in the memory copy the
 user / installer code tables, telephone numbers and every occurrence of the
 configured PIN are overwritten before the file is built (see redact_codes).
-Names (zones, areas, users) are kept: they are needed to map the memory. Reading the memory takes about 20-30 seconds and pauses polling.
+Names (zones, areas, users) are kept: they are needed to map the memory.
+The memory copy is added only when the "diagnostic_memory" option is enabled;
+reading it takes about 40 seconds and pauses polling.
 """
 
 from __future__ import annotations
@@ -21,7 +23,14 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_HOST, CONF_PIN, DATA_API_CLIENT, DATA_COORDINATOR, DOMAIN
+from .const import (
+    CONF_DIAGNOSTIC_MEMORY,
+    CONF_HOST,
+    CONF_PIN,
+    DATA_API_CLIENT,
+    DATA_COORDINATOR,
+    DOMAIN,
+)
 from .inim_api import InimAlarmAPI
 
 _LOGGER = logging.getLogger(__name__)
@@ -173,7 +182,12 @@ async def async_get_config_entry_diagnostics(
     initial = entry.data.get("initial_panel_config") or {}
 
     memory: dict[str, Any]
-    if api is None:
+    if not entry.options.get(CONF_DIAGNOSTIC_MEMORY, False):
+        memory = {
+            "skipped": "enable 'Include a copy of the panel memory in diagnostics' "
+            "in the integration options to add it"
+        }
+    elif api is None:
         memory = {"error": "integration not loaded"}
     else:
         try:

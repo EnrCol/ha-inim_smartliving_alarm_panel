@@ -55,6 +55,7 @@
             "limit_scenarios": "Number of Scenarios to import",
             "event_log_size": "Number of Events to store in log",
             "reader_names": "Reader Names (comma-separated list for Reader 1, Reader 2, etc.)",
+            "diagnostic_memory": "Include a copy of the panel memory in diagnostics (to support new models; codes and phone numbers are blanked)",
             "scenario_arm_home": "Arm Home Scenario",
             "scenario_arm_away": "Arm Away Scenario",
             "scenario_arm_night": "Arm Night Scenario",

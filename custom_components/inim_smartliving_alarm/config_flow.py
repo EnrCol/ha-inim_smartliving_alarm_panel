@@ -22,6 +22,7 @@ from .const import (
     CONF_POLLING_INTERVAL,
     CONF_SLOW_POLLING_INTERVAL,
     CONF_READER_NAMES,
+    CONF_DIAGNOSTIC_MEMORY,
     CONF_REFRESH_INITIAL_CONFIG,
     CONF_SCENARIO_ARM_AWAY,
     CONF_SCENARIO_ARM_HOME,
@@ -633,6 +634,7 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                         event_log_size_input, SYSTEM_MAX_EVENT_LOG_SIZE
                     ),
                     CONF_READER_NAMES: user_input.get(CONF_READER_NAMES, ""),
+                    CONF_DIAGNOSTIC_MEMORY: user_input.get(CONF_DIAGNOSTIC_MEMORY, False),
                 }
                 self.current_settings = {
                     **new_data,
@@ -699,6 +701,10 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_READER_NAMES,
                 default=self.current_settings.get(CONF_READER_NAMES, ""),
             ): str,
+            vol.Optional(
+                CONF_DIAGNOSTIC_MEMORY,
+                default=self.current_settings.get(CONF_DIAGNOSTIC_MEMORY, False),
+            ): cv.boolean,
         }
 
         return self.async_show_form(
@@ -729,6 +735,9 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_EVENT_LOG_SIZE, DEFAULT_EVENT_LOG_SIZE
                         ),
                         CONF_READER_NAMES: settings.get(CONF_READER_NAMES, ""),
+                        CONF_DIAGNOSTIC_MEMORY: settings.get(
+                            CONF_DIAGNOSTIC_MEMORY, False
+                        ),
                     }
                 )
 
