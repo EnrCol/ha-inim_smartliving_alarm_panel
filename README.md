@@ -2,79 +2,89 @@ Home Assistant Integration for Inim SmartLiving Alarm Systems
 =============================================================
 
 > [!WARNING]
-> This is an experimental custom component. It is not affiliated with Inim Electronics and it is not an official Inim integration. Use it at your own risk.
-
-![INIM integration brand](custom_components/inim_smartliving_alarm/brand/logo.png)
+> Unofficial custom integration, not developed, endorsed or supported by Inim Electronics. INIM and SmartLiving are trademarks of their owner and are used here only to name the compatible panels. It does not replace the alarm system or its official apps: use it at your own risk.
 
 [![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=EnrCol&repository=ha-inim_smartliving_alarm_panel&category=integration)
 
-**Beta v0.3.4b8.** Independent, unofficial integration; not developed, endorsed or supported by Inim Electronics. The icon is an unofficial visual adaptation of the INIM name and distinctive dot motif.
+**Version 0.3.4** ([release notes](RELEASE_NOTES_0.3.4.md)). Local control of Inim SmartLiving panels through the SmartLAN/SI network interface: areas, zones, scenarios, outputs and event log. The panel model, names, terminals and outputs are read from the panel, so no manual mapping is needed.
 
-**Validation scope:** field tests and protocol verification are available only on SmartLiving **10100** (firmware 6.09); 505/515 and 1050/1050L must not be described as hardware-validated. The automatic 10100 entity-import changes in this beta are pending a new real-installation soak test. Never treat a beta as a replacement for the official security system.
+Compatibility
+-------------
 
-**Marketplace updates:** add this repository as a custom Integration repository and enable **beta/prerelease versions** for it to receive `v0.3.4b4`. Stable updates remain separate. Release notes: [v0.3.4b4](RELEASE_NOTES_0.3.4b4.md), [v0.3.4b3](RELEASE_NOTES_0.3.4b3.md), [v0.3.4b2](RELEASE_NOTES_0.3.4b2.md), [v0.3.4b1](RELEASE_NOTES_0.3.4b1.md).
+| Panel | Firmware | Status |
+| --- | --- | --- |
+| SmartLiving 10100 / 10100L | 6.09 | **Verified on a real installation**: every feature, including scenarios, zone exclusion and output commands. |
+| SmartLiving 1050 / 1050L | 6.07 | **Verified on a real installation**: automatic setup, names, areas, zones, scenarios, live states and outputs list. Zone exclusion keeps the method of the original integration. |
+| SmartLiving 515 | 6.x | Expected to work: name pointers and scenario pre-check confirmed by another user ([matteoraf#18](https://github.com/matteoraf/ha-inim_smartliving_alarm_panel/pull/18)). Not tested here. |
+| SmartLiving 505 | 6.x | Expected to work from the official memory map; not tested. |
 
-This custom integration connects Home Assistant to Inim SmartLiving alarm panels equipped with a SmartLAN/SI network interface. It allows local monitoring and control of the alarm system from Home Assistant.
+Firmware 5.10 and 6.x share the same memory map. Older firmware is not supported. Owners of untested panels can help: see [Helping support other panels](#helping-support-other-panels).
+
+**Home Assistant 2025.10 or later** is required.
 
 Features
 --------
 
-* **Alarm control panel entity**
+* **Alarm control panel**: `arm_home`, `arm_away`, `arm_night`, `arm_vacation` and `disarm` mapped to panel scenarios. Scenarios named `TOTALE`, `DISINSERITO`, `NOTTE`, `VACANZA` (and the English equivalents) are mapped automatically.
+* **Areas**: one switch per area (arm/disarm) and one alarm sensor. A sensor *Any area armed* is on when at least one area is armed.
+* **Zones**: open/closed sensor, alarm memory sensor and exclusion switch for every programmed zone. Placeholder slots (`AREA 007`, `SCENARIO 010`, empty names) are not created.
+* **Scenarios**: one button per scenario, an *active* sensor per scenario and a sensor with the name of the active scenario.
+* **Outputs**: switches for relay, OC1, OC2 and every terminal programmed as an output, named after the panel programming.
+* **Event log**: last panel events with readable descriptions, users and readers.
+* **Panel information**: firmware version and system type.
+* **Reconfigure** and **diagnostics** built in.
 
-  * Standard Home Assistant alarm actions such as `arm_home`, `arm_away`, `arm_night` and `disarm` can be mapped to panel scenarios.
-  * Scenario activation includes a SmartLiving 10100-compatible pre-check implementation.
+Prerequisites
+-------------
 
-* **Selectable panel profiles**
+* An Inim SmartLiving panel with a SmartLAN/SI module reachable from Home Assistant.
+* IP address and TCP port of the module (usually `5004`).
+* A user PIN. Commands are accepted only for the areas, scenarios and outputs that PIN is allowed to use.
 
-  * `SmartLiving 1050 / 1050L compatible`
-  * `SmartLiving 10100 / 10100L`
+Installation
+------------
 
-* **Area management**
+### HACS / Marketplace
 
-  * Switch entities for arming/disarming individual areas.
-  * Binary sensor entities for area alarm/triggered state.
+1. Open HACS (*Marketplace* in recent Home Assistant versions).
+2. ⋮ → **Custom repositories** → `https://github.com/EnrCol/ha-inim_smartliving_alarm_panel`, type **Integration**.
+3. Open **INIM SmartLiving Alarm (unofficial)** and download it.
+4. Restart Home Assistant.
 
-* **Zone monitoring**
+Beta versions are published as prereleases: enable *Show beta versions* on the repository to receive them.
 
-  * Binary sensor entities for live zone status.
-  * Binary sensor entities for triggered zones.
-  * Extended attributes with zone configuration data when available.
-  * Switch entities for individual zone exclusion.
+### Manual installation
 
-* **Scenario control**
+Copy `custom_components/inim_smartliving_alarm` into `config/custom_components` and restart Home Assistant.
 
-  * Button entities for direct scenario activation.
-  * Binary sensor entities for active scenario indication.
-  * A dedicated text sensor shows the currently active scenario name.
+Setup
+-----
 
-* **Event log sensor**
+*Settings → Devices & services → Add integration → Inim Smartliving Alarm*, then enter:
 
-  * Stores recent panel events.
-  * Event log size is configurable.
-  * Reader names can be read automatically on supported profiles, with a manual fallback option.
+* **Host** and **Port** of the SmartLAN module;
+* **PIN**;
+* **Panel model**: leave **Automatic**. The integration reads the type the panel reports and picks the matching profile;
+* **Panel name**: used for the entity IDs (default `Inim Smartliving`).
 
-* **Panel information sensors**
+The integration then reads the panel programming (about 30 seconds) and proposes:
 
-  * Firmware version.
-  * System type.
+* **Fast polling interval** (1-300 s, default 2 s): zones, areas, active scenario.
+* **Slow polling interval** (1-300 s, default 10 s): zone exclusions, alarm memory, outputs, event log.
+* **Areas / zones / scenarios to import**: set from the last programmed slot.
+* **Event log size** and optional **reader names** (read from the panel when available).
+* **Scenario mapping** for the Home Assistant alarm modes. Only programmed scenarios are listed. Scenarios with unambiguous names are preselected; the others are left for you to choose.
 
-Supported panel profiles
-------------------------
-
-The integration keeps a 1050-compatible profile as the default, then applies larger limits and different memory offsets when the 10100 profile is selected.
-
-| Profile | Areas | Zones | Scenarios | Keyboards | Readers | Notes |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| SmartLiving 1050 / 1050L compatible | 10 | 50 | 30 | 10 | 20 | Default compatibility profile. |
-| SmartLiving 10100 / 10100L | 15 | 100 | 30 | 15 | 30 | Tested with profile-specific name offsets. |
+How it works
+------------
 
 ### Names
 
-The panel publishes in RAM (`0x4014`-`0x4029`) a pointer to each table of names: areas, zones, readers, keyboards, scenarios and fixed outputs. The integration reads the names at those addresses, so they are right on any model and firmware, and limits each table to the room before the next one (no phantom areas or zones). The technique comes from [matteoraf#18](https://github.com/matteoraf/ha-inim_smartliving_alarm_panel/pull/18), tested there on a SmartLiving 515; on the reference 10100 every pointer matches the address found by hand (areas `0x0000`, zones `0x00F0`, readers `0x13B0`, keyboards `0x1590`, scenarios `0x2350`, outputs `0x26A0`). If a pointer cannot be read or its names are not text, the fixed address of the selected profile is used.
+The panel publishes in RAM (`0x4014`-`0x4029`) where each table of names starts: areas, zones, readers, keyboards, scenarios and outputs. The integration reads the names there, so they are right on every model and firmware, and limits each table to the room before the next one. If a pointer cannot be read, the fixed address of the panel profile is used. Technique from [matteoraf#18](https://github.com/matteoraf/ha-inim_smartliving_alarm_panel/pull/18).
 
 ### Terminals, zone exclusion and outputs
 
-The zone exclusion and output commands do not use the zone number but the physical terminal it is wired to. At setup the integration reads, at the addresses of the INIM installer software memory map for the model the panel reports, the terminal table (physical terminal → logical terminal) and the terminal programming (type of each logical terminal):
+The exclusion and output commands do not use the zone number but the physical terminal. At setup the integration reads, at the addresses of the INIM installer software memory map, the terminal table and the type of each terminal:
 
 | Model | Logical terminals | Terminal table | Terminal records |
 | --- | ---: | ---: | ---: |
@@ -83,247 +93,82 @@ The zone exclusion and output commands do not use the zone number but the physic
 | 1050 | 50 | `0x78FD` (130) | `0x57D4` |
 | 10100 | 100 | `0xCF75` (240) | `0x90CD` |
 
-Terminals programmed as outputs get an output switch instead of a zone exclusion switch (the panel refuses to exclude them). On the 10100 the exclusion switches use this table; if it cannot be read, the built-in map of the reference installation is used and a warning is logged. 505/515/1050 keep the original exclusion indexes until the table is confirmed on one of them.
+Terminals programmed as outputs get an output switch instead of an exclusion switch. On the 10100 the exclusion switches use this table; 505/515/1050 keep the indexes of the original integration until the table is confirmed by an exclusion test on one of them.
 
-Prerequisites
--------------
-
-* An Inim SmartLiving alarm control panel.
-* A SmartLAN/SI network interface module.
-* The SmartLAN module must be reachable from Home Assistant on the local network.
-* The panel IP address, TCP port and a valid user PIN.
-
-The common SmartLAN/SI TCP port is `5004`, but this depends on your configuration.
-
-Installation
-------------
-
-### HACS custom repository
-
-1. Open HACS in Home Assistant.
-2. Go to **Integrations**.
-3. Add this repository as a custom integration repository.
-4. Install **Inim Smartliving Alarm**.
-5. Restart Home Assistant.
-
-### Manual installation
-
-1. Copy `custom_components/inim_smartliving_alarm` into your Home Assistant `config/custom_components` folder.
-2. Restart Home Assistant.
-
-Configuration
--------------
-
-After installation and restart:
-
-1. Go to **Settings** -> **Devices & Services**.
-2. Click **+ Add Integration**.
-3. Search for **Inim Smartliving Alarm**.
-4. Enter:
-
-   * **Host**: the IP address of the SmartLAN module.
-   * **Port**: the SmartLAN TCP port, usually `5004`.
-   * **PIN**: a valid panel PIN.
-   * **Panel Model**: leave `Automatic (detected from the panel)` (default): the integration reads the type the panel reports (`10100` → SmartLiving 10100 / 10100L profile; `1050`, `515`, `505` → 1050-compatible profile) and stores that profile. You can still pick one explicitly:
-
-     * `SmartLiving 1050 / 1050L compatible`
-     * `SmartLiving 10100 / 10100L`
-
-     If the selected profile does not match the type the panel reports, a warning is logged at startup.
-
-   * **Panel Name**: friendly Home Assistant name for the panel.
-
-5. Click **Submit**. The integration connects to the panel and reads the initial static configuration.
-6. Configure initial options:
-
-   * **Fast polling interval** (1-300 s, default 2 s): how often zones (doors/windows), areas and the active scenario are read. 1 s works on the reference SmartLiving 10100.
-   * **Slow polling interval** (1-300 s, default 10 s): how often zone exclusions, zone alarm memory and the event log are also read. After a command sent from Home Assistant everything is read immediately.
-   * **Limit Areas / Zones / Scenarios**: maximum number of entities to create.
-   * **Event Log Size**: number of recent events stored in the event-log sensor.
-   * **Reader Names**: optional manual comma-separated fallback for reader names. Supported profiles can read reader names automatically.
-
-7. Configure scenario mappings:
-
-   * **Arm Home**
-   * **Arm Away**
-   * **Arm Night**
-   * **Arm Vacation**
-   * **Disarm**
-
-The scenario dropdown is built from the names read using the currently selected panel profile.
-
-Options and refresh behavior
-----------------------------
-
-You can change integration options later from:
-
-**Settings** -> **Devices & Services** -> **Inim Smartliving Alarm** -> **Configure**
-
-The options flow is split into two steps:
-
-1. Connection/profile/static options.
-2. Scenario mapping options.
+Output commands write the PIN, the output index and the state at `0x2007`; the result is read at `0x2004`. The state of every output comes from register `0x2003`. Terminal outputs on control panel terminals T1-T3 are not exposed: their command index is the same as relay/OC1/OC2.
 
 ### Polling and the SmartLAN connection
 
-The SmartLAN interface accepts **one TCP client at a time** and delays a new connection by about 2 seconds after the previous one closes. The integration therefore reads everything it needs in a polling cycle over a single connection and, with a fast interval of 10 s or less, keeps that connection open between cycles (the panel drops idle connections after 15-30 s).
+The SmartLAN module accepts **one TCP client at a time** and delays a new connection by about 2 seconds after the previous one closes. The integration reads everything over a single connection per cycle and, with a fast interval of 10 s or less, keeps it open between cycles. Commands reuse the same connection, so the new state appears after about one second.
 
-Commands sent from Home Assistant (arm/disarm, scenarios, zone exclusion, alarm reset) reuse the same kept connection and leave it open when they succeed, so the new state appears after about 1 second instead of waiting for a new connection. A connection idle for more than 12 s is reopened before a command; any error closes it.
+While Home Assistant holds the connection, other local clients (for example the INIM installer software) cannot connect: disable the integration, or set the fast interval above 10 s, before a programming session. The INIM cloud app keeps working.
 
-While Home Assistant holds the connection, other local clients — for example installer programming software — cannot connect. Disable the integration or set the fast interval above 10 s before a local programming session. On the reference installation the INIM mobile app (cloud) kept working.
+Entities
+--------
 
-The options form never shows the stored PIN; leave the PIN field empty to keep it.
+Entities are grouped under one device and named after the panel programming. With the default panel name:
 
-### Reconfigure
+* `alarm_control_panel.inim_smartliving`: alarm keypad.
+* `sensor.inim_smartliving_active_scenario`, `sensor.inim_smartliving_event_log`, `sensor.inim_smartliving_firmware_version`, `sensor.inim_smartliving_system_type`.
+* `button.inim_smartliving_scenario_N`: activate scenario N (numbers start from 0 in the order programmed on the panel), plus a binary sensor *active* per scenario.
+* Areas: a switch (on = armed) and a binary sensor for the area alarm; *Any area armed* binary sensor.
+* Zones: a binary sensor (on = open), a binary sensor for the alarm memory and a switch (**on = zone active, off = excluded**).
+* Outputs: one switch per output. The relay is disabled by default because it usually drives the main siren.
 
-*Settings → Devices & services → INIM → ⋮ → Reconfigure* changes host, port, PIN or panel model and reads the panel again with the installed version, without removing the integration (use it after upgrading from an older version, or when the panel IP changes). An empty PIN keeps the stored one; the model defaults to automatic. Polling pauses for the few seconds of the read.
+The entity IDs of areas, zones and outputs depend on the names and on the Home Assistant area the device is in: look them up under *Settings → Devices & services → Inim Smartliving*.
 
-### Refresh initial panel config
+Example card
+------------
 
-The options screen includes a **Refresh Initial Panel Config** checkbox.
+[`Examples/inim_card.yaml`](Examples/inim_card.yaml) is a ready card made of built-in cards only (no HACS cards): alarm keypad, active scenario, a summary of armed areas, open, excluded and alarmed zones and active outputs, and scenario buttons with a confirmation. *Dashboard → Edit → Add card → Manual*, then paste the file. The summary finds the entities of the integration by itself; if your panel is not called `Inim Smartliving`, change the other entity IDs.
 
-Use it when:
+[`Examples/alarm_dashboard.yaml`](Examples/alarm_dashboard.yaml) is the richer dashboard of the original project, based on `custom:button-card`.
 
-* you changed names, scenarios, areas, zones, readers or keyboards on the alarm panel;
-* you changed panel model profile;
-* you updated the integration and want to force a new static data read;
-* scenario dropdowns show stale or shifted names.
+Options, reconfigure and refresh
+--------------------------------
 
-The integration also stores an internal `initial_panel_config_revision`. When profile offsets or initial-data parsing change in a new build, the integration automatically refreshes the stored initial configuration during startup. This avoids needing to switch from 10100 to 1050 and back just to force a refresh.
-
-Entities provided
------------------
-
-Entity IDs are generated from the configured panel name and the names fetched from the panel.
-
-* **Main alarm control panel**
-
-  * `alarm_control_panel.your_panel_name`
-
-* **Areas**
-
-  * `switch.your_panel_name_area_X`
-  * `binary_sensor.your_panel_name_area_X_triggered`
-
-* **Zones**
-
-  * `binary_sensor.your_panel_name_zone_X`
-  * `binary_sensor.your_panel_name_zone_X_triggered`
-  * `switch.your_panel_name_zone_X`
-
-* **Scenarios**
-
-  * `button.your_panel_name_scenario_X`
-  * `binary_sensor.your_panel_name_scenario_X_active`
-
-* **Outputs** (all models)
-
-  * `switch.your_panel_name_output_fixed_0` (relay, disabled by default: it usually drives the main siren)
-  * `switch.your_panel_name_output_fixed_1` (OC1), `switch.your_panel_name_output_fixed_2` (OC2)
-  * `switch.your_panel_name_output_terminal_N`: one per terminal programmed as an output (N = logical terminal = zone - 1)
-
-  Named after the panel programming. The state is read in slow polling cycles and right after a command. The panel refuses the command if the PIN is not allowed to drive that output. Terminal outputs on control panel terminals T1-T3 are not exposed: their command index is the same as relay/OC1/OC2.
-
-* **Sensors**
-
-  * `sensor.your_panel_name_event_log`
-  * `sensor.your_panel_name_active_scenario`
-  * `sensor.your_panel_name_firmware_version`
-  * `sensor.your_panel_name_system_type`
-
-Usage examples
---------------
-
-### Basic alarm control
-
-Use `alarm_control_panel.your_panel_name` in a standard Home Assistant alarm panel card. The Home Assistant arm/disarm actions trigger the scenarios mapped during setup.
-
-### Scenario activation
-
-Use the scenario button entities in dashboards or automations to activate panel scenarios directly.
-
-### Active scenario sensor
-
-`sensor.your_panel_name_active_scenario` displays the current active scenario name and index.
-
-For example, on a correctly configured SmartLiving 10100 profile:
-
-* index `0` -> `DISINSERITO`
-* index `3` -> `TOTALE`
-
-### Event log
-
-Use `sensor.your_panel_name_event_log` to show recent panel events. A custom table card can make this easier to read in Lovelace.
+* **Configure** (*Settings → Devices & services → Inim Smartliving → Configure*): polling intervals, import limits, event log, scenario mapping, PIN, memory copy in diagnostics. The stored PIN is never shown; leave the field empty to keep it.
+* **Refresh initial panel config** (in Configure): reads names, scenarios, terminals and outputs again after a change in the panel programming. It also happens automatically after an update that changes how the panel is read.
+* **Reconfigure** (*⋮ → Reconfigure*): changes host, port, PIN or model and reads the panel again without removing the integration. Use it after upgrading from an old version or when the module IP changes.
 
 Helping support other panels
 ----------------------------
 
-Only a SmartLiving 10100 (firmware 6.09) has been checked on hardware. Memory positions differ between models and firmware, so support for other panels is built from data sent by their owners:
+Support for panels that cannot be tested here is built from data sent by their owners:
 
-1. In Home Assistant open **Settings** → **Devices & Services** → **Inim Smartliving Alarm** → ⋮ → **Download diagnostics**. It takes about 30-60 seconds and polling pauses meanwhile.
-2. The file contains the entry settings without PIN and host, the live state and a read-only copy of the panel memory (configuration and names). Before the file is built, the user/installer code tables, telephone numbers and every occurrence of the configured PIN are overwritten.
-3. Zone, area, scenario and user **names** are kept, because they are needed to find the tables. Check the file before attaching it to a public issue; if you prefer, send it privately.
-4. Open an issue with the file, the panel model and firmware, and a short description of the installation (which terminals are zones or outputs). An export of the INIM installer software programming is also very useful.
+1. *Configure* → enable **Include a copy of the panel memory in diagnostics**.
+2. *⋮ → Download diagnostics*. It takes about 40 seconds and polling pauses meanwhile.
+3. The file contains the entry settings (without PIN and host), the live state and a read-only copy of the panel memory. Before the file is built, user and installer codes, telephone numbers and every occurrence of the configured PIN are overwritten.
+4. Names (zones, areas, users, contacts) are kept because they are needed to map the memory. **Do not attach the file to a public issue**: open an issue with model and firmware and ask where to send it privately.
+5. Disable the option again afterwards.
+
+Without the option, diagnostics contain only the settings, the panel information and the live state.
 
 Troubleshooting
 ---------------
 
 ### Cannot connect / connection timed out
 
-* Verify host and port.
-* Verify Home Assistant can reach the SmartLAN module.
-* Check firewall, VLAN and routing rules.
-* Confirm the SmartLAN module is powered and online.
-* Make sure no other local client (programming software, another Home Assistant instance) is holding the single SmartLAN connection.
+* Check host, port and that Home Assistant can reach the module (firewall, VLAN).
+* Make sure no other local client (installer software, another Home Assistant) holds the single SmartLAN connection.
 
-### Scenarios do not activate
+### A command is refused
 
-* Check that the PIN is valid and has sufficient permissions.
-* Verify the Home Assistant alarm actions are mapped to the correct panel scenarios.
-* Check for open/alarmed zones preventing activation.
+* The PIN must be allowed to use that area, scenario or output.
+* A scenario is refused when a zone of its areas is open.
 
-### Scenario names are wrong or stale
+### Names are wrong, missing or stale
 
-* Open integration options.
-* Verify the selected panel model profile.
-* Enable **Refresh Initial Panel Config**.
-* Submit the first options step and review the scenario mapping page.
+Run **Refresh initial panel config** from *Configure*, or **Reconfigure**. A zone without a name on the panel is not created: give it a name in the panel programming.
 
-For SmartLiving 10100 / 10100L, expected first scenario names are usually:
+### Entities do not update
 
-* `DISINSERITO`
-* `SOLO P.T.`
-* `SOLO SEMINT.`
-* `TOTALE`
-* `NOTTE`
+* Check the logs for `custom_components.inim_smartliving_alarm`.
+* With debug logging, `Finished fetching … in X seconds` shows the duration of each cycle.
 
-### First zones show `AREA 011`, `AREA 012`, etc.
+Credits
+-------
 
-This means the static names were likely read with the wrong profile or with stale cached configuration. Select the correct panel profile and enable **Refresh Initial Panel Config**.
+Based on [matteoraf/ha-inim_smartliving_alarm_panel](https://github.com/matteoraf/ha-inim_smartliving_alarm_panel), with contributions from its forks. Memory maps verified against the INIM installer software and real panels.
 
-### Entities do not appear or do not update
-
-* Check Home Assistant logs for `custom_components.inim_smartliving_alarm`.
-* Verify the fast and slow polling intervals. With debug logging, `Finished fetching … in X seconds` shows the duration of each cycle.
-* Restart Home Assistant after installing or updating the integration.
-
-### Incorrect number of entities
-
-* Check **Limit Areas / Zones / Scenarios** in the integration options.
-* Make sure the selected panel profile matches your panel model.
-
-Development notes
------------------
-
-This integration is based on reverse engineering and field testing. Panel memory maps can vary by model and firmware. Keep the default profile conservative and add profile-specific behavior only when confirmed by real panel data.
-
-Contributing
-------------
-
-Contributions, bug reports and panel-specific diagnostics are welcome. Please include:
-
-* panel model;
-* firmware version;
-* selected profile;
-* relevant Home Assistant logs;
-* whether names were read correctly after **Refresh Initial Panel Config**.
+Contributions and bug reports are welcome: include panel model, firmware, Home Assistant logs and, for new models, the diagnostics file sent privately.

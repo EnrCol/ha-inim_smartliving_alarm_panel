@@ -1,0 +1,94 @@
+# Example dashboard card for the INIM SmartLiving integration.
+#
+# Built-in cards only: no custom cards from HACS are needed.
+# Dashboard → Edit → Add card → Manual, then paste this file.
+#
+# The entity IDs below are the ones created when the panel is called
+# "Inim Smartliving" (the default name). If you chose another name, replace
+# "inim_smartliving" with yours. The Markdown card finds every entity of the
+# integration by itself and needs no change.
+type: vertical-stack
+cards:
+  - type: alarm-panel
+    entity: alarm_control_panel.inim_smartliving
+    states:
+      - arm_home
+      - arm_away
+      - arm_night
+
+  - type: tile
+    entity: sensor.inim_smartliving_active_scenario
+    name: Scenario attivo
+    icon: mdi:shield-home
+
+  - type: markdown
+    title: Stato impianto
+    content: |
+      {%- set ns = namespace(open=[], mem=[], excl=[], areas=[], outs=[]) -%}
+      {%- for e in integration_entities('inim_smartliving_alarm') -%}
+        {%- set s = states[e] -%}
+        {%- if s is none -%}
+        {%- elif e.startswith('binary_sensor.') and s.attributes.status_text is defined -%}
+          {%- if s.state == 'on' -%}{%- set ns.open = ns.open + [s.attributes.zone_name | trim] -%}{%- endif -%}
+        {%- elif e.startswith('binary_sensor.') and s.attributes.zone_name is defined -%}
+          {%- if s.state == 'on' -%}{%- set ns.mem = ns.mem + [s.attributes.zone_name | trim] -%}{%- endif -%}
+        {%- elif e.startswith('switch.') and s.attributes.command_index_mode is defined -%}
+          {%- if s.state == 'off' -%}{%- set ns.excl = ns.excl + [s.attributes.zone_name | trim] -%}{%- endif -%}
+        {%- elif e.startswith('switch.') and s.attributes.area_id is defined -%}
+          {%- if s.state == 'on' -%}{%- set ns.areas = ns.areas + [s.attributes.area_name | trim] -%}{%- endif -%}
+        {%- elif e.startswith('switch.') and s.attributes.output_name is defined -%}
+          {%- if s.state == 'on' -%}{%- set ns.outs = ns.outs + [s.attributes.output_name | trim] -%}{%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      **Aree inserite:** {{ ns.areas | join(', ') if ns.areas else 'nessuna' }}
+
+      **Zone aperte:** {{ ns.open | join(', ') if ns.open else 'nessuna' }}
+
+      **Zone escluse:** {{ ns.excl | join(', ') if ns.excl else 'nessuna' }}
+
+      **Memoria allarme:** {{ ns.mem | join(', ') if ns.mem else 'nessuna' }}
+
+      **Uscite attive:** {{ ns.outs | join(', ') if ns.outs else 'nessuna' }}
+
+  # Optional: scenario buttons. Scenario numbers start from 0, in the order
+  # programmed on the panel; add or remove rows to match yours.
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+      - type: button
+        entity: button.inim_smartliving_scenario_0
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: button.press
+          target:
+            entity_id: button.inim_smartliving_scenario_0
+          confirmation:
+            text: Attivare questo scenario?
+        hold_action:
+          action: more-info
+      - type: button
+        entity: button.inim_smartliving_scenario_1
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: button.press
+          target:
+            entity_id: button.inim_smartliving_scenario_1
+          confirmation:
+            text: Attivare questo scenario?
+        hold_action:
+          action: more-info
+      - type: button
+        entity: button.inim_smartliving_scenario_2
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: button.press
+          target:
+            entity_id: button.inim_smartliving_scenario_2
+          confirmation:
+            text: Attivare questo scenario?
+        hold_action:
+          action: more-info

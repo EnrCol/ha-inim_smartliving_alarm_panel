@@ -66,6 +66,7 @@
           "limit_scenarios": "Numero di Scenari da importare",
           "event_log_size": "Numero di eventi da memorizzare nel log",
           "reader_names": "Nomi dei Lettori (elenco separato da virgola es: Lettore Esterno, Lettore Garage, ecc.)",
+          "diagnostic_memory": "Includi una copia della memoria della centrale nella diagnosi (per supportare nuovi modelli; codici e telefoni vengono oscurati)",
           "scenario_arm_home": "Scenario Inserimento Parziale (Casa)",
           "scenario_arm_away": "Scenario Inserimento Totale (Fuori)",
           "scenario_arm_night": "Scenario Inserimento Notte",

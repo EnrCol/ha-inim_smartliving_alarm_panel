@@ -29,6 +29,8 @@ CONF_LIMIT_ZONES = "limit_zones"
 CONF_LIMIT_SCENARIOS = "limit_scenarios"
 CONF_EVENT_LOG_SIZE = "event_log_size"
 CONF_READER_NAMES = "reader_names"
+# Add a read-only copy of the panel memory to the diagnostics download.
+CONF_DIAGNOSTIC_MEMORY = "diagnostic_memory"
 
 
 # Scenario mapping keys (stored in ConfigEntry options, set by user in config flow)
