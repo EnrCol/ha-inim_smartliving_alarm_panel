@@ -4,7 +4,7 @@ from homeassistant.const import Platform
 
 DOMAIN = "inim_smartliving_alarm"
 # Bumped with the card so browsers load the new file (cache busting).
-VERSION_FOR_CARD = "0.3.5b1"
+VERSION_FOR_CARD = "0.3.5b2"
 
 # Platforms to be set up for this integration
 PLATFORMS = [
