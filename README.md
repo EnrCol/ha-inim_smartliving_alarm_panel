@@ -75,6 +75,23 @@ The integration then reads the panel programming (about 30 seconds) and proposes
 * **Event log size** and optional **reader names** (read from the panel when available).
 * **Scenario mapping** for the Home Assistant alarm modes. Only programmed scenarios are listed. Scenarios with unambiguous names are preselected; the others are left for you to choose.
 
+### Scenario mapping (alarm modes)
+
+The standard Home Assistant alarm panel has six fixed modes. Each one can be linked to a panel scenario:
+
+| Option | Alarm panel button | Example |
+| --- | --- | --- |
+| Arm Home scenario | Home | `SOLO P.T.` |
+| Arm Away scenario | Away | `TOTALE` |
+| Arm Night scenario | Night | `NOTTE` |
+| Arm Vacation scenario | Vacation | — |
+| Arm Custom Bypass scenario | Custom (*Personalizzato*) | `SOLO SEMINT.` |
+| Disarm scenario | Disarm | `DISINSERITO` |
+
+To set or change them: *Settings → Devices & services → Inim Smartliving → Configure*, press **Submit** on the first page (leave the PIN empty), choose the scenarios on the second page and press **Submit**. The integration reloads by itself; reload the browser page if a new menu does not appear. A mode left empty has no button in the alarm panel.
+
+The button labels are fixed by Home Assistant. To show every scenario with its own name, use the [INIM alarm panel card](#inim-alarm-panel-card).
+
 How it works
 ------------
 
