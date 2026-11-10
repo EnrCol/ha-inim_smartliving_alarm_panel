@@ -21,6 +21,7 @@ from .const import (
     CONF_SCENARIO_ARM_HOME,
     CONF_SCENARIO_ARM_NIGHT,
     CONF_SCENARIO_ARM_VACATION,
+    CONF_SCENARIO_ARM_CUSTOM_BYPASS,
     CONF_SCENARIO_DISARM,
     DATA_API_CLIENT,
     DATA_COORDINATOR,
@@ -168,6 +169,8 @@ class InimAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
             supported_features |= AlarmControlPanelEntityFeature.ARM_NIGHT
         if self._scenario_mappings.get(CONF_SCENARIO_ARM_VACATION) is not None:
             supported_features |= AlarmControlPanelEntityFeature.ARM_VACATION
+        if self._scenario_mappings.get(CONF_SCENARIO_ARM_CUSTOM_BYPASS) is not None:
+            supported_features |= AlarmControlPanelEntityFeature.ARM_CUSTOM_BYPASS
         # Disarm is fundamental, assumed to be supported if CONF_SCENARIO_DISARM is mapped.
         # The base AlarmControlPanelEntity already supports disarm if other arm modes are supported.
         self._attr_supported_features = supported_features
@@ -340,6 +343,12 @@ class InimAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
         """Send arm vacation command."""
         await self._async_activate_scenario_by_mapping(
             CONF_SCENARIO_ARM_VACATION, "arm vacation"
+        )
+
+    async def async_alarm_arm_custom_bypass(self, code: str | None = None) -> None:
+        """Send arm custom bypass command (the sixth, user-chosen scenario)."""
+        await self._async_activate_scenario_by_mapping(
+            CONF_SCENARIO_ARM_CUSTOM_BYPASS, "arm custom bypass"
         )
 
     async def async_alarm_reset(self, area_id: int) -> None:

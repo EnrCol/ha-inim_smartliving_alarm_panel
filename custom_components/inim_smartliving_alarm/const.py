@@ -3,12 +3,15 @@
 from homeassistant.const import Platform
 
 DOMAIN = "inim_smartliving_alarm"
+# Bumped with the card so browsers load the new file (cache busting).
+VERSION_FOR_CARD = "0.3.5b1"
 
 # Platforms to be set up for this integration
 PLATFORMS = [
     Platform.ALARM_CONTROL_PANEL,
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
 ]
@@ -38,6 +41,7 @@ CONF_SCENARIO_ARM_HOME = "scenario_arm_home"
 CONF_SCENARIO_ARM_AWAY = "scenario_arm_away"
 CONF_SCENARIO_ARM_NIGHT = "scenario_arm_night"
 CONF_SCENARIO_ARM_VACATION = "scenario_arm_vacation"
+CONF_SCENARIO_ARM_CUSTOM_BYPASS = "scenario_arm_custom_bypass"
 CONF_SCENARIO_DISARM = "scenario_disarm"
 
 # Defaults

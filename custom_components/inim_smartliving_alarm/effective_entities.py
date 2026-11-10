@@ -15,6 +15,7 @@ from .const import (
     CONF_SCENARIO_ARM_HOME,
     CONF_SCENARIO_ARM_NIGHT,
     CONF_SCENARIO_ARM_VACATION,
+    CONF_SCENARIO_ARM_CUSTOM_BYPASS,
     CONF_SCENARIO_DISARM,
     KEY_INIT_AREA_NAMES,
     KEY_INIT_AREAS,
@@ -194,7 +195,7 @@ def resolve_ha_alarm_state(
     """Resolve only verified states; None makes alarm_control_panel unknown.
 
     Never infer "disarmed" from missing data and never use "custom_bypass"
-    for an unrecognized scenario. Physical alarm trigger takes precedence.
+    for an unrecognized scenario (only for the one mapped to it). Physical alarm trigger takes precedence.
     """
     if triggered_areas and any(triggered_areas):
         return "triggered"
@@ -207,6 +208,7 @@ def resolve_ha_alarm_state(
         (CONF_SCENARIO_ARM_AWAY, "armed_away"),
         (CONF_SCENARIO_ARM_NIGHT, "armed_night"),
         (CONF_SCENARIO_ARM_VACATION, "armed_vacation"),
+        (CONF_SCENARIO_ARM_CUSTOM_BYPASS, "armed_custom_bypass"),
     )
     for mapping_key, state in states_by_mapping:
         mapped_index = scenario_mappings.get(mapping_key)

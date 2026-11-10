@@ -26,6 +26,7 @@
             "scenario_arm_away": "Arm Away Scenario",
             "scenario_arm_night": "Arm Night Scenario",
             "scenario_arm_vacation": "Arm Vacation Scenario",
+            "scenario_arm_custom_bypass": "Arm Custom Bypass Scenario",
             "scenario_disarm": "Disarm Scenario"
           }
         }
@@ -60,6 +61,7 @@
             "scenario_arm_away": "Arm Away Scenario",
             "scenario_arm_night": "Arm Night Scenario",
             "scenario_arm_vacation": "Arm Vacation Scenario",
+            "scenario_arm_custom_bypass": "Arm Custom Bypass Scenario",
             "scenario_disarm": "Disarm Scenario"
           }
         }

@@ -274,3 +274,38 @@ def test_terminal_table_without_type_table_keeps_every_assigned_terminal():
     assert indexes[11] == 10
     assert outputs == {}
     assert len(indexes) == 19
+
+
+# --- Sixth mapping (custom bypass) and scenario select summary (b11) ---
+from custom_components.inim_smartliving_alarm.select import (  # noqa: E402
+    panel_summary,
+    scenario_kind,
+)
+
+
+def test_custom_bypass_mapping_resolves_only_its_scenario():
+    mappings = {"scenario_disarm": 0, "scenario_arm_custom_bypass": 2}
+    assert resolve_ha_alarm_state(2, mappings) == "armed_custom_bypass"
+    assert resolve_ha_alarm_state(4, mappings) is None
+
+
+def test_scenario_kind():
+    assert scenario_kind({"area_actions": {"1": "disarm", "2": "disarm"}}) == "disarm"
+    assert scenario_kind({"area_actions": {"1": "arm", "2": "disarm"}}) == "arm"
+    assert scenario_kind(None) == "arm"
+
+
+def test_panel_summary_states_and_open_zones():
+    areas = ["Casa", "Garage", "AREA 003"]
+    zones = ["Porta", "Finestra", ""]
+    data = {
+        "areas_status": {"area_statuses": {"1": "disarmed", "2": "armed", "3": "armed"}, "triggered_areas": []},
+        "zones_status": {"zone_statuses": {"1": "alarmed", "2": "clear", "3": "alarmed"}},
+    }
+    summary = panel_summary(data, areas, zones, None, None)
+    assert summary == {"alarm_state": "armed", "armed_areas": ["Garage"], "open_zones": ["Porta"]}
+    data["areas_status"]["area_statuses"]["2"] = "disarmed"
+    assert panel_summary(data, areas, zones, None, None)["alarm_state"] == "disarmed"
+    data["areas_status"]["triggered_areas"] = [2]
+    assert panel_summary(data, areas, zones, None, None)["alarm_state"] == "triggered"
+    assert panel_summary({}, areas, zones, None, None)["alarm_state"] == "unknown"

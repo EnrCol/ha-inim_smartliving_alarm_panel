@@ -25,10 +25,10 @@ Firmware 5.10 and 6.x share the same memory map. Older firmware is not supported
 Features
 --------
 
-* **Alarm control panel**: `arm_home`, `arm_away`, `arm_night`, `arm_vacation` and `disarm` mapped to panel scenarios. Scenarios named `TOTALE`, `DISINSERITO`, `NOTTE`, `VACANZA` (and the English equivalents) are mapped automatically.
+* **Alarm control panel**: `arm_home`, `arm_away`, `arm_night`, `arm_vacation`, `arm_custom_bypass` and `disarm` mapped to panel scenarios (up to six). For every scenario with its own name, use the *INIM alarm panel* card below. Scenarios named `TOTALE`, `DISINSERITO`, `NOTTE`, `VACANZA` (and the English equivalents) are mapped automatically.
 * **Areas**: one switch per area (arm/disarm) and one alarm sensor. A sensor *Any area armed* is on when at least one area is armed.
 * **Zones**: open/closed sensor, alarm memory sensor and exclusion switch for every programmed zone. Placeholder slots (`AREA 007`, `SCENARIO 010`, empty names) are not created.
-* **Scenarios**: one button per scenario, an *active* sensor per scenario and a sensor with the name of the active scenario.
+* **Scenarios**: a select with every scenario (state = active scenario), one button per scenario, an *active* sensor per scenario and a sensor with the name of the active scenario.
 * **Outputs**: switches for relay, OC1, OC2 and every terminal programmed as an output, named after the panel programming.
 * **Event log**: last panel events with readable descriptions, users and readers.
 * **Panel information**: firmware version and system type.
@@ -116,6 +116,24 @@ Entities are grouped under one device and named after the panel programming. Wit
 * Outputs: one switch per output. The relay is disabled by default because it usually drives the main siren.
 
 The entity IDs of areas, zones and outputs depend on the names and on the Home Assistant area the device is in: look them up under *Settings → Devices & services → Inim Smartliving*.
+
+INIM alarm panel card
+---------------------
+
+The integration adds to every dashboard the card **INIM alarm panel** (`custom:inim-alarm-panel`): an alarm panel in the style of the Home Assistant one, with **one button per scenario programmed on the panel and its real name**, instead of the fixed Home / Away / Night modes. It shows the armed, disarmed or alarm state, the active scenario and the open zones; a scenario is activated with a second tap to confirm. No HACS card or dashboard resource is needed: *Dashboard → Edit → Add card → INIM alarm panel*.
+
+```yaml
+type: custom:inim-alarm-panel
+entity: select.inim_smartliving_scenario
+name: Allarme            # optional
+confirm: true            # second tap to confirm (default)
+show_zones: true         # list open zones (default)
+hide: [SOLO SEMINT.]     # optional: scenarios to hide
+names: {TOTALE: Fuori casa}       # optional: labels instead of panel names
+icons: {NOTTE: mdi:weather-night} # optional
+```
+
+The card reads the entity `select.<panel>_scenario`: its options are the programmed scenarios, its state is the active one, and selecting an option activates it (also usable in automations).
 
 Example card
 ------------
