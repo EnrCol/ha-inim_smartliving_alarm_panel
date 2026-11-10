@@ -5,7 +5,10 @@
     "@EnrCol"
   ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "frontend",
+    "http"
+  ],
   "documentation": "https://github.com/EnrCol/ha-inim_smartliving_alarm_panel/blob/main/README.md",
   "integration_type": "device",
   "iot_class": "local_polling",
@@ -14,5 +17,5 @@
     "custom_components.inim_smartliving_alarm"
   ],
   "requirements": [],
-  "version": "0.3.4"
+  "version": "0.3.5b1"
 }

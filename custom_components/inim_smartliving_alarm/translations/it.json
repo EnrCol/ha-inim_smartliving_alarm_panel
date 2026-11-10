@@ -26,6 +26,7 @@
           "scenario_arm_away": "Scenario Inserimento Totale (Fuori)",
           "scenario_arm_night": "Scenario Inserimento Notte",
           "scenario_arm_vacation": "Scenario Inserimento Vacanza",
+          "scenario_arm_custom_bypass": "Scenario Inserimento Personalizzato",
           "scenario_disarm": "Scenario Disinserimento"
         }
       },
@@ -71,6 +72,7 @@
           "scenario_arm_away": "Scenario Inserimento Totale (Fuori)",
           "scenario_arm_night": "Scenario Inserimento Notte",
           "scenario_arm_vacation": "Scenario Inserimento Vacanza",
+          "scenario_arm_custom_bypass": "Scenario Inserimento Personalizzato",
           "scenario_disarm": "Scenario Disinserimento"
         }
       }

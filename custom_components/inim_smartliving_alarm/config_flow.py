@@ -28,6 +28,7 @@ from .const import (
     CONF_SCENARIO_ARM_HOME,
     CONF_SCENARIO_ARM_NIGHT,
     CONF_SCENARIO_ARM_VACATION,
+    CONF_SCENARIO_ARM_CUSTOM_BYPASS,
     CONF_SCENARIO_DISARM,
     DATA_INITIAL_PANEL_CONFIG,
     DATA_INITIAL_PANEL_CONFIG_REVISION,
@@ -71,6 +72,7 @@ SCENARIO_MAPPING_KEYS = [
     CONF_SCENARIO_ARM_AWAY,
     CONF_SCENARIO_ARM_NIGHT,
     CONF_SCENARIO_ARM_VACATION,
+    CONF_SCENARIO_ARM_CUSTOM_BYPASS,
     CONF_SCENARIO_DISARM,
 ]
 
@@ -500,6 +502,12 @@ class InimAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         scenario_choices
                     ),
                     vol.Optional(
+                        CONF_SCENARIO_ARM_CUSTOM_BYPASS,
+                        default=_scenario_default(detected_options, CONF_SCENARIO_ARM_CUSTOM_BYPASS, scenario_choices),
+                    ): vol.In(
+                        scenario_choices
+                    ),
+                    vol.Optional(
                         CONF_SCENARIO_DISARM,
                         default=_scenario_default(detected_options, CONF_SCENARIO_DISARM, scenario_choices),
                     ): vol.In(
@@ -780,6 +788,12 @@ class InimAlarmOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_SCENARIO_ARM_VACATION,
                         default=_scenario_default(
                             settings, CONF_SCENARIO_ARM_VACATION, scenario_choices
+                        ),
+                    ): vol.In(scenario_choices),
+                    vol.Optional(
+                        CONF_SCENARIO_ARM_CUSTOM_BYPASS,
+                        default=_scenario_default(
+                            settings, CONF_SCENARIO_ARM_CUSTOM_BYPASS, scenario_choices
                         ),
                     ): vol.In(scenario_choices),
                     vol.Optional(

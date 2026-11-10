@@ -7,7 +7,9 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_HOST,
@@ -62,6 +64,32 @@ _ESSENTIAL_INITIAL_CONFIG_KEYS = (
     "scenarios",
     "scenario_activations",
 )
+
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+# Dashboard card served by the integration itself (see www/).
+CARD_URL = "/inim_smartliving_alarm/inim-alarm-panel.js"
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the alarm panel card and add it to every dashboard."""
+    from pathlib import Path
+
+    from homeassistant.components.frontend import add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+
+    from .const import VERSION_FOR_CARD
+
+    path = Path(__file__).parent / "www" / "inim-alarm-panel.js"
+    try:
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(CARD_URL, str(path), True)]
+        )
+        add_extra_js_url(hass, f"{CARD_URL}?v={VERSION_FOR_CARD}")
+    except Exception as err:  # the card must never block the integration
+        _LOGGER.warning("Could not register the INIM alarm panel card: %s", err)
+    return True
 
 
 def _initial_config_is_usable(initial_config: dict[str, Any] | None) -> bool:
