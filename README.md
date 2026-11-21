@@ -161,6 +161,8 @@ tap_action:
     name: Allarme        # optional, same options as the card
 ```
 
+Ready-to-paste examples of the three forms (full, compact, opened from another card): [`Examples/inim_alarm_panel.yaml`](Examples/inim_alarm_panel.yaml).
+
 The card reads the entity `select.<panel>_scenario`: its options are the programmed scenarios, its state is the active one, and selecting an option activates it (also usable in automations).
 
 Example card
