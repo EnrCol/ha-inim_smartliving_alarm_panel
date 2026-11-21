@@ -569,6 +569,8 @@ def _profile_get_scenario_activations(self: InimAlarmAPI):
         InimAlarmConstants.AREA_ACTION_ARM: "arm",
         InimAlarmConstants.AREA_ACTION_DISARM: "disarm",
         InimAlarmConstants.AREA_ACTION_KEEP_STATUS: "keep",
+        InimAlarmConstants.AREA_ACTION_ARM_PARTIAL: "arm_partial",
+        InimAlarmConstants.AREA_ACTION_ARM_INSTANT: "arm_instant",
     }
 
     all_scenario_details = []
