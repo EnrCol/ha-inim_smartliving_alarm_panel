@@ -310,3 +310,12 @@ def test_panel_summary_states_and_open_zones():
     data["areas_status"]["triggered_areas"] = [2]
     assert panel_summary(data, areas, zones, None, None)["alarm_state"] == "triggered"
     assert panel_summary({}, areas, zones, None, None)["alarm_state"] == "unknown"
+
+
+def test_unmapped_scenario_with_armed_areas_is_custom_bypass():
+    mappings = {"scenario_disarm": 0, "scenario_arm_away": 3}
+    assert resolve_ha_alarm_state(7, mappings, [], True) == "armed_custom_bypass"
+    assert resolve_ha_alarm_state(7, mappings, [], False) is None
+    assert resolve_ha_alarm_state(7, mappings, [], None) is None
+    assert resolve_ha_alarm_state(3, mappings, [], True) == "armed_away"
+    assert resolve_ha_alarm_state(7, mappings, [1], True) == "triggered"

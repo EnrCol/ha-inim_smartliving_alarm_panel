@@ -191,11 +191,13 @@ def resolve_ha_alarm_state(
     active_scenario_index: int | None,
     scenario_mappings: dict[str, int | None],
     triggered_areas: Iterable[int] | None = None,
+    any_area_armed: bool | None = None,
 ) -> str | None:
     """Resolve only verified states; None makes alarm_control_panel unknown.
 
-    Never infer "disarmed" from missing data and never use "custom_bypass"
-    for an unrecognized scenario (only for the one mapped to it). Physical alarm trigger takes precedence.
+    Never infer "disarmed" from missing data. "custom_bypass" is used for the
+    scenario mapped to it and for an unmapped scenario while at least one
+    area is verifiably armed. Physical alarm trigger takes precedence.
     """
     if triggered_areas and any(triggered_areas):
         return "triggered"
@@ -214,6 +216,10 @@ def resolve_ha_alarm_state(
         mapped_index = scenario_mappings.get(mapping_key)
         if mapped_index is not None and active_scenario_index == mapped_index:
             return state
+    # A scenario with no HA mode but with areas really armed is "armed with a
+    # custom configuration": that is what custom bypass means in HA.
+    if any_area_armed is True:
+        return "armed_custom_bypass"
     return None
 
 

@@ -16,6 +16,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    CONF_LIMIT_AREAS,
+    KEY_INIT_AREA_NAMES,
+    KEY_INIT_AREAS,
+    KEY_LIVE_AREA_STATUSES_MAP,
     CONF_PANEL_NAME,
     CONF_SCENARIO_ARM_AWAY,
     CONF_SCENARIO_ARM_HOME,
@@ -35,7 +39,7 @@ from .const import (
     KEY_LIVE_TRIGGERED_AREAS_LIST,
     SERVICE_ALARM_RESET,
 )
-from .effective_entities import resolve_ha_alarm_state
+from .effective_entities import resolve_any_area_armed, resolve_ha_alarm_state
 from .inim_api import InimAlarmAPI
 from .utils import async_handle_scenario_activation_failure
 
@@ -226,8 +230,16 @@ class InimAlarmControlPanel(CoordinatorEntity, AlarmControlPanelEntity):
         area_data = data.get(KEY_LIVE_AREAS_STATUS) or {}
         triggered_areas = area_data.get(KEY_LIVE_TRIGGERED_AREAS_LIST) or []
 
+        area_names = (self._initial_panel_config.get(KEY_INIT_AREAS) or {}).get(
+            KEY_INIT_AREA_NAMES
+        ) or []
+        any_armed = resolve_any_area_armed(
+            area_data.get(KEY_LIVE_AREA_STATUSES_MAP),
+            area_names,
+            self.config_entry.options.get(CONF_LIMIT_AREAS),
+        )
         resolved = resolve_ha_alarm_state(
-            scenario_index, self._scenario_mappings, triggered_areas
+            scenario_index, self._scenario_mappings, triggered_areas, any_armed
         )
         new_state = AlarmControlPanelState(resolved) if resolved else None
 

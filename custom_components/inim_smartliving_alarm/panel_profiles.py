@@ -177,10 +177,10 @@ def _read_memory_range(self: InimAlarmAPI, start_address: int, total_length: int
 #   (10100: 27, 1050: 14 as originally implemented, 515: 7 per matteoraf#18;
 #   505 assumed like the 515, not verified).
 PANEL_HARDWARE: dict[str, dict[str, int]] = {
-    "505": {"precheck_response_len": 7, "logical_terminals": 10, "terminal_table": 0x3DE0, "physical_terminals": 40, "terminal_records": 0x2971},
-    "515": {"precheck_response_len": 7, "logical_terminals": 20, "terminal_table": 0x4595, "physical_terminals": 70, "terminal_records": 0x306F},
-    "1050": {"precheck_response_len": 14, "logical_terminals": 50, "terminal_table": 0x78FD, "physical_terminals": 130, "terminal_records": 0x57D4},
-    "10100": {"precheck_response_len": 27, "logical_terminals": 100, "terminal_table": 0xCF75, "physical_terminals": 240, "terminal_records": 0x90CD},
+    "505": {"precheck_response_len": 7, "logical_terminals": 10, "terminal_table": 0x3DE0, "physical_terminals": 40, "terminal_records": 0x2971, "scenario_records": 0x3B0A, "scenario_record_size": 5},
+    "515": {"precheck_response_len": 7, "logical_terminals": 20, "terminal_table": 0x4595, "physical_terminals": 70, "terminal_records": 0x306F, "scenario_records": 0x42BF, "scenario_record_size": 5},
+    "1050": {"precheck_response_len": 14, "logical_terminals": 50, "terminal_table": 0x78FD, "physical_terminals": 130, "terminal_records": 0x57D4, "scenario_records": 0x73D8, "scenario_record_size": 8},
+    "10100": {"precheck_response_len": 27, "logical_terminals": 100, "terminal_table": 0xCF75, "physical_terminals": 240, "terminal_records": 0x90CD, "scenario_records": 0xC81F, "scenario_record_size": 10},
 }
 TERMINAL_RECORD_SIZE = 12
 TERMINAL_RECORD_TYPE_OFFSET = 11
@@ -543,17 +543,28 @@ def _profile_get_scenario_activations(self: InimAlarmAPI):
         _LOGGER.error("Command spec for GET_SCENARIO_ACTIVATIONS not found.")
         return None
 
-    response_data_hex = self._send_command_core(
-        spec["cmd_full"], expect_specific_response_len=spec["resp_len"]
-    )
+    scenario_count = int(getattr(self, "system_max_scenarios", InimAlarmConstants.DEFAULT_SYSTEM_MAX_SCENARIOS))
+    max_areas = int(getattr(self, "system_max_areas", 10))
+    hardware = getattr(self, "panel_hardware", None) or {}
+    if hardware.get("scenario_records"):
+        # Scenario programming of the model (INIM installer software map:
+        # eep_prg_scenari). Each record starts with one nibble per area
+        # (low nibble = odd area) followed by icon / output bytes.
+        bytes_per_scenario_activation = hardware["scenario_record_size"]
+        response_data_hex = _read_config_memory_range(
+            self,
+            hardware["scenario_records"], scenario_count * bytes_per_scenario_activation
+        )
+        area_bytes_to_parse = min(math.ceil(max_areas / 2), bytes_per_scenario_activation - 2)
+    else:
+        response_data_hex = self._send_command_core(
+            spec["cmd_full"], expect_specific_response_len=spec["resp_len"]
+        )
+        bytes_per_scenario_activation = 8
+        area_bytes_to_parse = min(math.ceil(max_areas / 2), bytes_per_scenario_activation)
     if not response_data_hex:
         _LOGGER.error("No response or error when fetching scenario activations.")
         return None
-
-    bytes_per_scenario_activation = 8
-    scenario_count = int(getattr(self, "system_max_scenarios", InimAlarmConstants.DEFAULT_SYSTEM_MAX_SCENARIOS))
-    max_areas = int(getattr(self, "system_max_areas", 10))
-    area_bytes_to_parse = min(math.ceil(max_areas / 2), bytes_per_scenario_activation)
     action_map = {
         InimAlarmConstants.AREA_ACTION_ARM: "arm",
         InimAlarmConstants.AREA_ACTION_DISARM: "disarm",
