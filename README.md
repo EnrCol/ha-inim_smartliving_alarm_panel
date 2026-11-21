@@ -151,6 +151,16 @@ names: {TOTALE: Fuori casa}       # optional: labels instead of panel names
 icons: {NOTTE: mdi:weather-night} # optional
 ```
 
+**Open the panel from another card.** Any card with a tap action (tile, button, Mushroom…) can open the same dialog, so an existing card keeps its look:
+
+```yaml
+tap_action:
+  action: fire-dom-event
+  inim_alarm_panel:
+    entity: select.inim_smartliving_scenario
+    name: Allarme        # optional, same options as the card
+```
+
 The card reads the entity `select.<panel>_scenario`: its options are the programmed scenarios, its state is the active one, and selecting an option activates it (also usable in automations).
 
 Example card

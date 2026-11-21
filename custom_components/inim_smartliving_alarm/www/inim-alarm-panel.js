@@ -244,6 +244,7 @@ class InimAlarmPanel extends HTMLElement {
     this._dialog = null;
     this._armed = null;
     document.removeEventListener("keydown", this._onKey);
+    this._onDialogClosed?.();
   }
 
   _renderDialog(alarm, color, iconHtml, title, body) {
@@ -382,6 +383,37 @@ const DIALOG_STYLE = `<style>
     @keyframes slide { from { transform: translateY(100%); } }
   }
 </style>`;
+
+// Open the panel dialog from any card, e.g. a Mushroom or tile card:
+//   tap_action:
+//     action: fire-dom-event
+//     inim_alarm_panel:
+//       entity: select.inim_smartliving_scenario
+//       name: Allarme          # optional, same options as the card
+function openInimAlarmDialog(config) {
+  const getHass = () => document.querySelector("home-assistant")?.hass;
+  const hass = getHass();
+  if (!hass || !config?.entity) return;
+  const panel = document.createElement("inim-alarm-panel");
+  panel.setConfig({ ...config, compact: true });
+  panel.hass = hass;
+  // The element is not in a dashboard, so nobody feeds it new states: poll the
+  // frontend's hass object while the dialog is open.
+  const timer = setInterval(() => {
+    const now = getHass();
+    if (now) panel.hass = now;
+  }, 1000);
+  panel._onDialogClosed = () => clearInterval(timer);
+  panel._openDialog();
+}
+
+if (!window.__inimAlarmPanelListener) {
+  window.__inimAlarmPanelListener = true;
+  window.addEventListener("ll-custom", (ev) => {
+    const config = ev.detail?.inim_alarm_panel;
+    if (config) openInimAlarmDialog(config);
+  });
+}
 
 if (!customElements.get("inim-alarm-panel")) {
   customElements.define("inim-alarm-panel", InimAlarmPanel);
