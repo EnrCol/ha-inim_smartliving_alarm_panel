@@ -1,0 +1,56 @@
+# INIM alarm panel card: three ways to use it.
+#
+# The card is served by the integration itself (v0.3.5 or later): nothing to
+# install from HACS and no dashboard resource to add. It reads the entity
+# select.<panel>_scenario, created automatically with the scenarios
+# programmed on YOUR panel, so the same YAML works on every installation.
+# With the default panel name the entity is select.inim_smartliving_scenario.
+#
+# Dashboard → Edit → Add card → Manual, then paste ONE of the examples below.
+
+# --- 1. Full card -----------------------------------------------------------
+# Alarm panel with a button per scenario, always visible on the dashboard.
+type: custom:inim-alarm-panel
+entity: select.inim_smartliving_scenario
+name: Allarme
+
+# --- 2. Compact card --------------------------------------------------------
+# One row like a tile; a tap opens the panel in a dialog (a bottom sheet on
+# phones).
+#
+# type: custom:inim-alarm-panel
+# entity: select.inim_smartliving_scenario
+# name: Allarme
+# compact: true
+
+# --- 3. Open the panel from a card you already have -------------------------
+# Any card with a tap action (tile, button, Mushroom...) keeps its look and
+# opens the panel on tap. A long press still opens the standard alarm dialog.
+#
+# type: tile
+# entity: alarm_control_panel.inim_smartliving
+# name: Allarme
+# tap_action:
+#   action: fire-dom-event
+#   inim_alarm_panel:
+#     entity: select.inim_smartliving_scenario
+#     name: Allarme
+# hold_action:
+#   action: more-info
+
+# --- Options (all optional, same for the three forms) -----------------------
+# confirm: true          # second tap to confirm a scenario (default true)
+# show_zones: true       # list open zones (default true)
+# show_time: true        # "18 minutes ago" under the state (default true)
+# hide:                  # scenarios not to show
+#   - SCENARIO X
+# names:                 # labels to show instead of the panel names
+#   TOTALE: Fuori casa
+#   DISINSERITO: Spento
+# icons:                 # icons per scenario
+#   NOTTE: mdi:weather-night
+#
+# Names in hide / names / icons must match the panel exactly (upper case
+# included): read them in the options of select.<panel>_scenario.
+# The disarm button is grey and the others green: the integration takes the
+# disarm scenario from Configure → scenario mapping → Disarm.
