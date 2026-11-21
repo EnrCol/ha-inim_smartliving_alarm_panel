@@ -14,6 +14,7 @@
  * confirm: true            # second tap to confirm (default true)
  * show_zones: true         # list open zones (default true)
  * show_time: true          # "18 minutes ago" under the state (default true)
+ * compact: false           # one row like a tile; a tap opens the panel in a dialog
  * hide: [SCENARIO X]       # optional, scenario names to hide
  * names: {TOTALE: Fuori}   # optional, labels instead of panel names
  * icons: {NOTTE: mdi:weather-night}  # optional
@@ -100,6 +101,7 @@ class InimAlarmPanel extends HTMLElement {
 
   disconnectedCallback() {
     clearInterval(this._tick);
+    this._closeDialog();
   }
 
   set hass(hass) {
@@ -111,11 +113,13 @@ class InimAlarmPanel extends HTMLElement {
   }
 
   getCardSize() {
-    return 7;
+    return this._config?.compact ? 1 : 6;
   }
 
   getGridOptions() {
-    return { columns: 6, min_columns: 4, rows: "auto" };
+    return this._config?.compact
+      ? { columns: 6, min_columns: 3, rows: 1 }
+      : { columns: 6, min_columns: 4, rows: "auto" };
   }
 
   _lang() {
@@ -182,24 +186,80 @@ class InimAlarmPanel extends HTMLElement {
          </div>`
       : "";
 
-    this.shadowRoot.innerHTML = `${STYLE}
-      <ha-card class="${alarm}" style="--alarm-color:${COLOR[alarm] || COLOR.unknown}">
-        <div class="header">
-          <div class="header-icon"><ha-icon icon="${HEADER_ICON[alarm] || HEADER_ICON.unknown}"></ha-icon></div>
-          <div class="header-name">${esc(title)}</div>
-        </div>
+    const color = COLOR[alarm] || COLOR.unknown;
+    const iconHtml = `<div class="header-icon"><ha-icon icon="${HEADER_ICON[alarm] || HEADER_ICON.unknown}"></ha-icon></div>`;
+    const body = `
         <div class="state">${esc(headline)}</div>
         <div class="sub">${esc(sub)}</div>
         <div class="column">${pills}</div>
-        ${zonesHtml}
-      </ha-card>`;
+        ${zonesHtml}`;
 
-    this.shadowRoot.querySelectorAll("button.pill").forEach((button) =>
-      button.addEventListener("click", () => this._press(Number(button.dataset.index)))
-    );
+    if (this._config.compact) {
+      // One row like a tile; a tap opens the panel in a dialog.
+      const line = armedName ? `${armedName} · ${stateText}` : stateText;
+      this.shadowRoot.innerHTML = `${STYLE}
+        <ha-card class="compact ${alarm}" style="--alarm-color:${color}" role="button" tabindex="0">
+          ${iconHtml}
+          <div class="info"><div class="header-name">${esc(title)}</div><div class="compact-state">${esc(line)}</div></div>
+          <ha-icon class="chevron" icon="mdi:chevron-right"></ha-icon>
+        </ha-card>`;
+      const card = this.shadowRoot.querySelector("ha-card");
+      card.addEventListener("click", () => this._openDialog());
+      card.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && this._openDialog());
+      if (this._dialog) this._renderDialog(alarm, color, iconHtml, title, body);
+      return;
+    }
+
+    this.shadowRoot.innerHTML = `${STYLE}
+      <ha-card class="${alarm}" style="--alarm-color:${color}">
+        <div class="header">${iconHtml}<div class="header-name">${esc(title)}</div></div>
+        ${body}
+      </ha-card>`;
+    this._bindPills(this.shadowRoot);
     this.shadowRoot.querySelector(".header")?.addEventListener("click", () => {
       this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: this._config.entity }, bubbles: true, composed: true }));
     });
+  }
+
+  _bindPills(root) {
+    root.querySelectorAll("button.pill").forEach((button) =>
+      button.addEventListener("click", () => this._press(Number(button.dataset.index)))
+    );
+  }
+
+  _openDialog() {
+    if (this._dialog) return;
+    // Attached to <body>, outside the dashboard layout, so it covers the page.
+    this._dialog = document.createElement("div");
+    this._dialog.attachShadow({ mode: "open" });
+    document.body.appendChild(this._dialog);
+    this._onKey = (e) => e.key === "Escape" && this._closeDialog();
+    document.addEventListener("keydown", this._onKey);
+    this._render();
+  }
+
+  _closeDialog() {
+    if (!this._dialog) return;
+    this._dialog.remove();
+    this._dialog = null;
+    this._armed = null;
+    document.removeEventListener("keydown", this._onKey);
+  }
+
+  _renderDialog(alarm, color, iconHtml, title, body) {
+    const root = this._dialog.shadowRoot;
+    const opened = root.childElementCount > 0;
+    root.innerHTML = `${STYLE}${DIALOG_STYLE}
+      <div class="backdrop"></div>
+      <div class="sheet ${alarm} ${opened ? "" : "opening"}" style="--alarm-color:${color}" role="dialog" aria-modal="true">
+        <div class="handle"></div>
+        <div class="header">${iconHtml}<div class="header-name">${esc(title)}</div>
+          <button class="close" aria-label="close"><ha-icon icon="mdi:close"></ha-icon></button></div>
+        ${body}
+      </div>`;
+    root.querySelector(".backdrop").addEventListener("click", () => this._closeDialog());
+    root.querySelector(".close").addEventListener("click", () => this._closeDialog());
+    this._bindPills(root);
   }
 
   _press(index) {
@@ -238,6 +298,7 @@ class InimAlarmPanel extends HTMLElement {
       schema: [
         { name: "entity", required: true, selector: { entity: { domain: "select", integration: "inim_smartliving_alarm" } } },
         { name: "name", selector: { text: {} } },
+        { name: "compact", default: false, selector: { boolean: {} } },
         { name: "confirm", default: true, selector: { boolean: {} } },
         { name: "show_time", default: true, selector: { boolean: {} } },
         { name: "show_zones", default: true, selector: { boolean: {} } },
@@ -262,15 +323,15 @@ const STYLE = `<style>
   .header-icon ha-icon { --mdc-icon-size: 22px; }
   .header-name { font-size: 16px; font-weight: 500; color: var(--primary-text-color);
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .state { margin-top: 20px; font-size: 34px; line-height: 42px; overflow-wrap: anywhere; font-weight: 400; text-align: center;
+  .state { margin-top: 16px; font-size: 30px; line-height: 38px; overflow-wrap: anywhere; font-weight: 400; text-align: center;
            color: var(--primary-text-color); }
   ha-card.triggered .state { color: var(--alarm-color); }
   .sub { margin-top: 4px; min-height: 20px; font-size: 14px; color: var(--secondary-text-color); text-align: center; }
-  .column { margin-top: 24px; width: 100%; max-width: 240px; display: flex; flex-direction: column; gap: 4px; padding: 4px;
+  .column { margin-top: 20px; width: 100%; max-width: 220px; display: flex; flex-direction: column; gap: 4px; padding: 4px;
             box-sizing: border-box; border-radius: 32px;
             background: var(--ha-control-select-background, var(--secondary-background-color, rgba(0,0,0,.06))); }
   .pill { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-          min-height: 76px; padding: 10px 12px; border: none; border-radius: 28px; background: transparent;
+          min-height: 62px; padding: 8px 12px; border: none; border-radius: 28px; background: transparent;
           color: var(--primary-text-color); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer;
           transition: background-color .18s ease, color .18s ease; -webkit-tap-highlight-color: transparent; }
   .pill ha-icon { --mdc-icon-size: 24px; }
@@ -287,6 +348,39 @@ const STYLE = `<style>
            font-size: 14px; color: var(--secondary-text-color); }
   .zones ha-icon { --mdc-icon-size: 20px; flex: none; }
   .zones.warn { color: var(--warning-color, #ff9800); }
+  ha-card.compact { flex-direction: row; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer; }
+  ha-card.compact .info { flex: 1; min-width: 0; }
+  .compact-state { font-size: 14px; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ha-card.compact.armed .compact-state, ha-card.compact.triggered .compact-state { color: var(--alarm-color); }
+  .chevron { color: var(--secondary-text-color); --mdc-icon-size: 20px; }
+</style>`;
+
+const DIALOG_STYLE = `<style>
+  .backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .45); }
+  .sheet { position: fixed; z-index: 1001; left: 50%; top: 50%; transform: translate(-50%, -50%);
+           width: min(420px, calc(100vw - 32px)); max-height: 90vh; overflow-y: auto; box-sizing: border-box;
+           display: flex; flex-direction: column; align-items: center; padding: 12px 20px 28px;
+           border-radius: 28px; color: var(--primary-text-color);
+           background: var(--ha-dialog-surface-background, var(--card-background-color, var(--primary-background-color, #fff)));
+           box-shadow: 0 8px 32px rgba(0, 0, 0, .3); font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
+  .sheet.opening { animation: fade .18s ease-out; }
+  .sheet.triggered .state { color: var(--alarm-color); }
+  .sheet.triggered .pill.active { animation: pulse 1s ease-in-out infinite; }
+  .handle { display: none; width: 40px; height: 4px; border-radius: 2px; margin-bottom: 12px;
+            background: var(--divider-color, rgba(0, 0, 0, .2)); }
+  .sheet .header { cursor: default; }
+  .sheet .header-name { flex: 1; }
+  .close { border: none; background: transparent; color: var(--primary-text-color); cursor: pointer;
+           width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .close:hover { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
+  @keyframes fade { from { opacity: 0; transform: translate(-50%, -48%); } }
+  @media (max-width: 600px) {
+    .sheet { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: 100%; max-height: 92vh;
+             border-radius: 28px 28px 0 0; padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+    .sheet.opening { animation: slide .22s ease-out; }
+    .handle { display: block; }
+    @keyframes slide { from { transform: translateY(100%); } }
+  }
 </style>`;
 
 if (!customElements.get("inim-alarm-panel")) {
