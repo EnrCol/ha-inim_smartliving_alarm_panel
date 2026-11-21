@@ -143,6 +143,7 @@ The integration adds to every dashboard the card **INIM alarm panel** (`custom:i
 type: custom:inim-alarm-panel
 entity: select.inim_smartliving_scenario
 name: Allarme            # optional
+compact: true            # one row like a tile; a tap opens the panel in a dialog
 confirm: true            # second tap to confirm (default)
 show_zones: true         # list open zones (default)
 hide: [SOLO SEMINT.]     # optional: scenarios to hide
