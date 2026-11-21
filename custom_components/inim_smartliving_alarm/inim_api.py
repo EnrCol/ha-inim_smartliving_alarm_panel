@@ -190,6 +190,9 @@ class InimAlarmConstants:
     AREA_ACTION_DISARM = "4"
     AREA_ACTION_ARM = "1"
     AREA_ACTION_KEEP_STATUS = "0"
+    # Same codes as the area status: 2 = partial, 3 = instant (no entry delay).
+    AREA_ACTION_ARM_PARTIAL = "2"
+    AREA_ACTION_ARM_INSTANT = "3"
     MAX_AREAS_PAYLOAD = 16  # Payload structure supports up to 8 bytes)
 
     # Mappings for Zone Configuration Parsing
@@ -899,6 +902,8 @@ class InimAlarmAPI:
             InimAlarmConstants.AREA_ACTION_ARM: "arm",  # '1'
             InimAlarmConstants.AREA_ACTION_DISARM: "disarm",  # '4'
             InimAlarmConstants.AREA_ACTION_KEEP_STATUS: "keep",  # '0'
+            InimAlarmConstants.AREA_ACTION_ARM_PARTIAL: "arm_partial",  # '2'
+            InimAlarmConstants.AREA_ACTION_ARM_INSTANT: "arm_instant",  # '3'
         }
 
         for i in range(InimAlarmConstants.DEFAULT_SYSTEM_MAX_SCENARIOS):

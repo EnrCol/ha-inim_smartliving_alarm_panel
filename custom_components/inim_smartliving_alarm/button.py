@@ -200,7 +200,9 @@ class InimScenarioActivationButton(ButtonEntity):
                         area_actions_dict.values()
                     )  # e.g., {'arm', 'keep'} or {'disarm'}
 
-                    if "disarm" in actions_present and "arm" not in actions_present:
+                    if "disarm" in actions_present and not any(
+                        action.startswith("arm") for action in actions_present
+                    ):
                         # Only consider it a disarm scenario if 'disarm' is present AND 'arm' is NOT.
                         is_disarm = True
 
