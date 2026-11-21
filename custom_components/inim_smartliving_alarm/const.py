@@ -4,7 +4,7 @@ from homeassistant.const import Platform
 
 DOMAIN = "inim_smartliving_alarm"
 # Bumped with the card so browsers load the new file (cache busting).
-VERSION_FOR_CARD = "0.3.5b2"
+VERSION_FOR_CARD = "0.3.5b3"
 
 # Platforms to be set up for this integration
 PLATFORMS = [
@@ -77,7 +77,7 @@ DATA_INITIAL_PANEL_CONFIG_REVISION = "initial_panel_config_revision"
 
 # Bump this whenever profile memory offsets or initial static panel data parsing changes.
 # Existing entries with an older/missing revision will refresh initial_panel_config on startup/options.
-INITIAL_PANEL_CONFIG_REVISION = 5
+INITIAL_PANEL_CONFIG_REVISION = 6
 
 # Static configuration fetched by config_flow (e.g., zone names, scenario names)
 # will be stored in entry.data and entry.options by the config_flow itself.
