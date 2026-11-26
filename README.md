@@ -1,6 +1,11 @@
 Home Assistant Integration for Inim SmartLiving Alarm Systems
 =============================================================
 
+> [!IMPORTANT]
+> **This fork is no longer developed.** It started from [matteoraf/ha-inim_smartliving_alarm_panel](https://github.com/matteoraf/ha-inim_smartliving_alarm_panel), the original integration by matteoraf. Its 0.4 and 0.5 releases now cover what this fork added: SmartLiving 505, 515, 1050 and 10100 (firmware 6), output switches, zone exclusion and, from 0.5, state updates every second over a connection kept open. It has been verified on a SmartLiving 10100. Please use that integration and report problems there.
+>
+> Both integrations use the same domain (`inim_smartliving_alarm`), so only one can be installed: installing it replaces this fork and converts the existing configuration entry, keeping most entity IDs. Make a Home Assistant backup first: going back needs it.
+
 > [!WARNING]
 > Unofficial custom integration, not developed, endorsed or supported by Inim Electronics. INIM and SmartLiving are trademarks of their owner and are used here only to name the compatible panels. It does not replace the alarm system or its official apps: use it at your own risk.
 
